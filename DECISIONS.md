@@ -88,3 +88,15 @@ A numbered log of design decisions. Entries are never rewritten; a later entry s
 - **Options:** parse in Infrastructure and pass hrefs to Domain; parse in Domain; regex extraction.
 - **Why:** parsing a string is pure computation with no I/O, so it keeps the extraction rules (including `<base href>`) under fast unit tests next to the normalization rules. A real parser handles malformed HTML that regex wouldn't.
 - **Trade-off:** Domain takes a third-party dependency (MIT, already pre-approved).
+
+## D-16 Schema: EF Core migrations, applied only by the API
+- **Decision:** one EF Core `InitialCreate` migration (snake_case names, statuses stored as strings), generated with `dotnet-ef` 8.0.11 as a repo-local tool. The API runs `Migrate` at startup; the worker doesn't.
+- **Options:** both processes migrate at startup; API only; a separate migration job in compose; `EnsureCreated`.
+- **Why:** EF 8 takes no lock while migrating, so two processes starting together can race on `__EFMigrationsHistory`. A separate job is cleaner but costs time we don't have. `EnsureCreated` can't evolve the schema.
+- **Trade-off:** the worker needs the API to have started once against a database. Compose ordering (slice 7) handles this; integration tests migrate in their fixture.
+
+## D-17 Dev loop runs in the .NET 8 SDK container on this machine
+- **Decision:** mid-session, Windows Application Control (Smart App Control) began blocking freshly built, unsigned DLLs (0x800711C7), so test hosts and `dotnet-ef` could no longer load the project assemblies. Build, `dotnet format`, `dotnet ef` and tests now run inside `mcr.microsoft.com/dotnet/sdk:8.0` against a copy of the repo without `bin`/`obj`.
+- **Options:** turn off Smart App Control (irreversible without a Windows reset); run in the SDK container.
+- **Why:** it keeps the machine's security policy intact and needs no repo changes.
+- **Trade-off:** each check costs a container start. Local environment only; nothing in the repo depends on it.

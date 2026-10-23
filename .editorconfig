@@ -21,3 +21,7 @@ dotnet_sort_system_directives_first = true
 dotnet_diagnostic.CA2007.severity = none
 # xUnit test method names use underscores.
 dotnet_diagnostic.CA1707.severity = none
+
+# EF Core migrations are generated; keep them as dotnet-ef writes them.
+[**/Migrations/*.cs]
+generated_code = true
