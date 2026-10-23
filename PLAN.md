@@ -76,14 +76,15 @@ Postgres-backed tests (D-6): Testcontainers on the locally installed `postgres:1
 | 6 | ~~Observability~~: folded into slices 3 and 4 (D-10) | `/health` hit in the slice 7 smoke run | — | 0 m |
 | 7 ✅ | Docker: one multi-stage Dockerfile shared by API and worker (build arg picks the project), full compose up, end-to-end smoke against a real small site | Manual smoke, recorded in README; `/health` on API and worker | Must | 15 m |
 | 8 ✅ | React UI: Start, Job Details (poll every 1.5 s until terminal; progress as "processed / enqueued" text; recursive tree with ratio), History (paged, clickable), loading/error states | Manual run; (cuttable) one Vitest for tree component | Must | 35 m |
-| 9 | Transactional outbox on the API (MassTransit EF outbox) | Covered by slice 4 test still passing | Cuttable | 15 m |
-| 10 | Cancel job (API + worker skip + UI button) | API test: cancel → status Canceled; worker skips | Cuttable | 15 m |
+| 9 ✂ | Transactional outbox on the API (MassTransit EF outbox) | Covered by slice 4 test still passing | Cuttable | 15 m |
+| 10 ✂ | Cancel job (API + worker skip + UI button) | API test: cancel → status Canceled; worker skips | Cuttable | 15 m |
 | 11 | GitHub Actions: restore, build, unit tests | Workflow YAML lint | Cuttable (cheap, do if time) | 10 m |
-| 12 | SSRF guard (block loopback/private/link-local targets), robots.txt, UI in compose, SSE progress | — | Cuttable | — |
+| 12 ✂ | SSRF guard (block loopback/private/link-local targets), robots.txt, UI in compose, SSE progress | — | Cuttable | — |
 | 13 | Docs: README (run, architecture, message schema, idempotency, retry/DLQ, limitations, built-first / cut / next, assumptions), DECISIONS.md final pass, summary | Read-through against rubric | **Must, protected 4:00–4:20** | 20 m |
 
 Must-have build total (slices 0–8) = 195 m after D-12/D-13, plus 20 m docs. Slice 0 finished at 1:18 (33 m late), leaving 162 m to freeze for 180 m of remaining must-have work: **about 20 m still short; next cut pending Jim's ruling (D-14).** (The original 3 h 35 m figure was a miscount; the original slices summed to 235 m.)
 Cut order if late: 12 → 10 → 9 → 11 → (next must-have cut: pending, D-14).
+**3:25 status (D-27):** all must-haves done; spec-checklist gaps closed (D-25, D-26). Slices 9, 10 and 12 cut (✂); docs started early; slice 11 only if time remains after the acceptance run.
 
 ## Known limitations to state if not addressed
 Exact-host domain match; no robots.txt; no SSRF guard; outbox gap (if 9 cut); one consumer per job, so no parallelism across a job's pages (D-13); no watchdog for a job whose worker crashed without redelivery; two URLs redirecting to the same page are both crawled; JS-rendered links not seen; polling rather than push; duplicate delivery and Fault handling verified manually, not by automated test (D-12).

@@ -154,3 +154,9 @@ A numbered log of design decisions. Entries are never rewritten; a later entry s
 - **Options:** counter columns on `jobs` kept by the worker; counts on history rows too; leave the summary as processed / enqueued.
 - **Why:** the spec asks for a status "summary" without defining it; outcome counts and whether the limit cut the crawl short are what a user needs to read a result (checklist W-4). The grouped query uses the `(job_id, …)` index and stays cheap at 200 pages per job, so no new columns or migration.
 - **Trade-off:** the job page runs this query on every 1.5 s poll while a job is running.
+
+## D-27 Cut the outbox, cancel and slice 12; start docs early
+- **Decision:** at 3:20, with all must-have slices done, slices 9 (transactional outbox), 10 (cancel) and 12 (SSRF guard, robots.txt, UI in compose, SSE) are cut. The remaining time goes to the gaps found by the spec checklist (job ID visible, D-25, D-26), the README's submission sections from 3:25 instead of 4:00, and a clean-copy acceptance run. Slice 11 (CI) is built only if time remains.
+- **Options:** build the outbox for the event-robustness score; build cancel; spend the time on docs and acceptance.
+- **Why:** the rubric accepts the publish-after-commit gap if it is "handled or documented", and cancel is optional. The README was missing most of its required sections, and 20 minutes wasn't enough for them.
+- **Trade-off:** the outbox gap and the lack of an SSRF guard remain, stated as known limitations with fixes listed under next steps.

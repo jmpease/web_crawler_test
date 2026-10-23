@@ -1,9 +1,40 @@
 # Job-based web crawler
 
-> Work in progress. Summary, architecture, message schema, idempotency, retry/DLQ, limitations and trade-offs are added as the slices land (see PLAN.md).
+## Summary
+A user submits a URL in a React UI. The **Crawl API** stores a job and publishes one `CrawlJob` message to RabbitMQ. A separate **Crawl Worker** crawls the start host breadth-first (default depth 2, at most 200 pages), computes each page's **Domain Link Ratio** (same-host links / all unique http(s) links, 0 when there are none), and stores jobs, pages and edges in PostgreSQL. The UI shows the job ID, status, progress and page counts while the job runs, the page tree with each page's ratio and links, and a paged history.
 
-## Current scope
-.NET 8 solution (Domain, Infrastructure, Api, Worker, unit and integration test projects) and a compose file that runs PostgreSQL, RabbitMQ, the API and the worker. Domain: URL normalization, link extraction from HTML, same-host classification and the domain link ratio (same-domain links / all unique http(s) links; 0 when a page has none). Persistence: EF Core schema for `jobs`, `pages` and `edges` with an initial migration, applied by the API at startup. API: create, get, tree and history endpoints, publishing one `CrawlJob` message per job to RabbitMQ, plus `/health`. Worker: a `CrawlJob` consumer that crawls the job breadth-first (same host only, within `maxDepth` and `maxPages`), stores each page's status, link counts, ratio and outgoing links, then marks the job Completed or Failed; plus `/health`. UI (`web/`): start a crawl, a job page that polls until the job finishes and shows progress and the page tree with each page's ratio and links, and a paged history. Messaging: transient database errors are retried, anything else dead-letters the message and marks its job Failed.
+What's built: .NET 8 minimal API and worker, EF Core on PostgreSQL, MassTransit 8 on RabbitMQ with retry for transient database errors, a dead-letter queue and a fault consumer that fails dead-lettered jobs, an HTTP fetcher with timeouts, retries and manually checked redirects, structured JSON logs carrying the job id, `/health` on both services, unit tests for normalization and ratios, a crawl test over local HTML fixtures on real Postgres (Testcontainers), and one `docker compose up --build` for everything except the UI.
+
+Quick start: `docker compose up --build`, then `cd web && npm ci && npm run dev` and open `http://localhost:5173`. Details under [Run](#run).
+
+This was built in one sitting on 2026-10-23 inside the assessment's 4-hour timebox (12:30–4:20 pm ET, including these docs), using Claude Code as a pair programmer. `PLAN.md` holds the plan and slice order; `DECISIONS.md` logs every design decision with the options considered and the trade-off.
+
+## Architecture
+```
+React UI ──HTTP──> Crawl API ──CrawlJob──> RabbitMQ ──> Crawl Worker ──HTTP──> target site
+                      │                                     │
+                      └──────────────> PostgreSQL <─────────┘
+```
+- **Projects:** `Crawler.Domain` (URL normalization, link extraction with AngleSharp, ratio, tree building; no I/O, no EF or MassTransit), `Crawler.Infrastructure` (EF Core context and migrations, the worker's store, HTTP fetcher, message contract and bus setup), `Crawler.Api`, `Crawler.Worker`. The API and the worker are separate processes and containers built from one Dockerfile.
+- **One message per job (D-13).** The API publishes a single `CrawlJob`; one consumer crawls the whole job. The breadth-first frontier lives in the database as the job's `Pending` pages, not in the broker, so a redelivered message resumes where the last attempt stopped and there's no per-page completion race to manage. The cost is no parallelism within a job.
+- **Who writes what:** the API inserts the job and its root page (depth 0, `Pending`) in one transaction before publishing, so the worker never creates jobs and the root page exists before any message does. The worker writes everything the crawl learns: page outcomes, new child pages, edges, the job's status, timestamps and counters. The fault consumer (in the worker) is the only other writer, and it only moves a Pending or Running job to Failed. Both services share one database. That couples them through the schema, which is acceptable at this size and keeps job creation and the crawl's writes transactional.
+- **HTTP failures are data, not exceptions (D-9).** The fetcher returns Fetched, Skipped or Failed with a reason, so a dead site produces Failed pages, never message retries or dead letters.
+- **Message contract in one place:** `Crawler.Infrastructure/Messaging/CrawlJob.cs`, referenced by both services.
+
+## Data model and SQL
+- `jobs(id uuid, url, start_host, max_depth, max_pages, status, failure_reason, created_at, started_at, completed_at, pages_enqueued, pages_processed)`. Index `(created_at DESC, id)` serves the history query's order and paging.
+- `pages(id bigserial, job_id, url, url_hash, depth, parent_page_id, status, final_url, http_status, content_type, outgoing_links, same_domain_links, domain_link_ratio, error, fetched_at)`. **Unique `(job_id, url_hash)`**: a normalized URL is stored and crawled once per job. `url_hash` is the SHA-256 of the normalized URL, which keeps the unique index small however long the URL. Index `(job_id, parent_page_id)`.
+- `edges(job_id, from_page_id, to_url, to_url_hash, is_same_domain)`, **primary key `(from_page_id, to_url_hash)`**, index `(job_id)`. Every unique outgoing link of every fetched page, internal and external.
+- **Tree:** each page appears once, under the page that first discovered it (`pages.parent_page_id`, the BFS parent). Edges point at URLs rather than page rows because most targets (external links, links past the depth or page limit) never become pages; join `edges.to_url_hash = pages.url_hash` within a job to get page-to-page relations. `GET /api/jobs/{id}/tree` reads the pages in one query and the edges in another and builds the tree in memory (no N+1).
+- The input URL is stored **normalized** (`HTTPS://Example.COM:443` becomes `https://example.com/`).
+
+## Idempotency
+Delivery is at-least-once, so the worker must tolerate duplicates:
+- A message for a job that is already Completed, Failed or Canceled is acknowledged and ignored. Pending → Running is a conditional update that sets `started_at` only once.
+- Each page's result is written with `UPDATE … WHERE status = 'Pending'`. If another delivery saved it first, zero rows change and the whole transaction (edges, children, counters) rolls back.
+- Child pages are inserted with `INSERT … WHERE NOT EXISTS … ON CONFLICT (job_id, url_hash) DO NOTHING` while the job row is locked `FOR UPDATE`, so the max-pages cap and counters stay exact. Edges use `ON CONFLICT DO NOTHING` on their primary key.
+- Finishing the job is `WHERE status = 'Running'`; the fault consumer's update is `WHERE status IN ('Pending', 'Running')`.
+- Tested: a second delivery of a completed job changes no rows and makes no requests. Concurrent duplicate deliveries rely on the same conditions but have no automated test.
 
 ## Worker
 - One consumer per job (endpoint `crawl-job`). The frontier is the job's `Pending` pages in the database, taken shallowest first in discovery order, so a redelivered message resumes where the last attempt stopped. A message for a job that is already Completed, Failed or Canceled is acknowledged and ignored.
@@ -37,7 +68,11 @@ The job page polls `GET /api/jobs/{id}` every 1.5 s until the job is Completed, 
 ```json
 CrawlJob { "jobId": "guid" }
 ```
-Published to the `Crawler.Infrastructure.Messaging:CrawlJob` exchange with the MassTransit envelope's `correlationId` set to the job id. Delivery is at-least-once.
+- `jobId`: the job to crawl. Everything else (URL, start host, limits) is read from the `jobs` row, so the message can't disagree with the database.
+
+Published to the `Crawler.Infrastructure.Messaging:CrawlJob` exchange and consumed from the `crawl-job` queue. The MassTransit envelope adds `messageId` (unique per publish) and `correlationId` (= `jobId`, used in every log scope), plus `messageType`, `sentTime` and host details. Delivery is at-least-once.
+
+When a `CrawlJob` is dead-lettered, MassTransit publishes `Fault<CrawlJob>` (`faultedMessageId`, `exceptions[]` with type and message, and the original `message`), consumed from `crawl-job-fault`.
 
 ## Logging
 JSON console logs with scopes. Every request under `/api/jobs/{id}`, and job creation, logs inside a scope carrying `correlationId` = job id. In the worker, every log line for a message carries `correlationId` (job id) and `messageId`, and per-page lines add `pageId`. Page URLs are logged; page bodies never are. The worker logs Polly (retry pipeline) at Warning and above, so retries and failures show but successful attempts don't.
@@ -123,3 +158,51 @@ Compose reads dev-only credentials from environment variables, with defaults:
 | `VITE_API_URL` (dev server or build environment) | `http://localhost:5129` | UI |
 
 `appsettings.Development.json` points at the compose database and broker with the dev credentials above.
+
+## Assumptions and trade-offs
+Where the spec leaves a choice open, this is what the build does:
+- **Crawl scope:** only pages on the start host are fetched. External links are recorded (edges) and counted in the ratio, never fetched.
+- **Starting domain:** the exact host of the start URL, case-insensitive. `www.` and other subdomains count as external.
+- **Ratio counting:** unique normalized http(s) links per page. A fragment-only link (`#top`) or a link to the page itself counts as an internal link to that page. `mailto:`, `tel:`, `javascript:`, `ftp:`, `data:` and other schemes are excluded from both counts. No links gives 0. `<base href>` is honored.
+- **Depth:** the start page is depth 0; `maxDepth` defaults to 2 and must be 0–5. Pages at `maxDepth` are fetched, parsed and scored, and their links are stored, but not enqueued.
+- **Max pages:** default 200 per job (`Jobs__MaxPages`), counting enqueued pages including the root. Links found after the cap are still stored as edges.
+- **Tree:** each page appears once, under its first-discovery (BFS) parent; cycles and shared children don't repeat. The edges table holds the full graph.
+- **Non-HTML, failures, redirects:** detection uses the response `Content-Type` (`text/html`, `application/xhtml+xml`). Non-HTML pages and bodies over 2 MB are Skipped with no ratio. HTTP errors after retries, network errors and timeouts are Failed with the reason. Redirects are followed by the worker, up to 5 hops, checking the start host on every hop; an off-host redirect is Skipped and not requested. A page keeps its requested URL and records `finalUrl`.
+- **Job outcome:** Failed if the start page wasn't fetched (failed, non-HTML, or redirected off-host) or the message was dead-lettered; otherwise Completed, with per-page statuses showing any failures below the root (D-25).
+- **Normalization:** lowercase scheme and host, drop the default port, user info and fragment, empty path becomes `/`; path case, trailing slash and query string are kept as-is.
+- **.NET 8**, as the assessment requires. Its support ends on 2026-11-10, so moving to .NET 10 (LTS) is the first item under next steps.
+- **UI** runs with `npm run dev`, not in compose (the spec's compose list is API, worker, database and broker).
+- **Out of scope:** authentication, robots.txt and SSRF protection (see limitations).
+
+## Known limitations
+- **Publish-after-commit gap:** the API commits the job, then publishes. A crash between the two leaves a Pending job with no message. MassTransit's EF transactional outbox would close it; it was cut for time (slice 9).
+- **No SSRF guard:** a user can point the worker at internal or private addresses (localhost, 10.x, cloud metadata). Must be fixed before this faces untrusted users.
+- **No robots.txt**, and exact-host matching only (`example.com` and `www.example.com` are different sites). A start URL that redirects to another host fails with a reason naming that host.
+- **No cancel:** the `Canceled` status exists and is honored by the worker and UI as terminal, but nothing sets it (slice 10 cut).
+- **One consumer per job:** no parallelism within a job, and one slow site holds a consumer for its whole crawl. A crawl longer than RabbitMQ's 30-minute delivery-acknowledgement timeout is redelivered and resumes.
+- **Database outages over about 15 s** exhaust the in-process retries and dead-letter the job. If the database is still down, the fault consumer can't mark it Failed either and the job stays Running, with the fault in `crawl-job-fault_error`. Dead-lettered messages are not replayed automatically. There is no watchdog for jobs stuck Running.
+- **Duplicate pages via redirects:** two URLs that redirect to the same page are both crawled.
+- **Static HTML only:** links added by JavaScript aren't seen.
+- **Polling:** the UI polls every 1.5 s rather than receiving pushes (SSE or SignalR).
+- **Test coverage gaps:** the consumers' MassTransit wiring, concurrent duplicate deliveries and the dead-letter path are checked by hand (see Test), not by automated tests. No CI pipeline.
+
+## Built first, cut, and next
+**Built first, and why:** the domain rules (normalization, link extraction, ratio) with unit tests, because correctness is the largest share of the grade and everything else depends on them. Then the schema with its unique keys, so idempotency is enforced by the database rather than by code paths; then the API and the worker, to get one crawl working end to end; then the UI, because the user flow is a core requirement; then Docker; then retries and dead-lettering, which the database-held frontier made cheap. A final pass against the spec added the visible job ID, failing jobs whose start page couldn't be fetched, and page counts in the job summary.
+
+**Cut, and why** (in this order, as time ran short):
+- One message per page (D-2) became one message per job (D-13): same idempotent schema, much less coordination code.
+- Automated tests for duplicate delivery and the fault consumer (D-12), replaced by documented manual checks; one store-level fault test came back later.
+- The transactional outbox (slice 9): the gap is narrow and documented above.
+- Cancel (slice 10): optional in the spec.
+- SSRF guard, robots.txt, UI in compose and SSE progress (slice 12).
+- GitHub Actions CI (slice 11).
+
+**Next:**
+1. Upgrade to .NET 10 LTS before .NET 8 support ends (2026-11-10).
+2. SSRF guard: resolve the host and refuse loopback, private, link-local and metadata addresses on every hop.
+3. MassTransit EF outbox on the API, closing the publish-after-commit gap.
+4. Cancel endpoint and UI button, with the worker re-reading the job's status between pages so a running crawl stops promptly.
+5. A watchdog that fails or requeues jobs Running with no progress for N minutes, plus broker-level delayed redelivery for longer outages.
+6. CI running build, fast tests, Docker tests and the UI build; automated tests for the consumers with the MassTransit test harness.
+7. robots.txt, `www.`-aware host matching as an option, and SSE progress.
+8. Parallel fetches within a job (a bounded worker pool over the database frontier).
