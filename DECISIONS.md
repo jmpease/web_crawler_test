@@ -166,3 +166,9 @@ A numbered log of design decisions. Entries are never rewritten; a later entry s
 - **Options:** keep the two explicit shapes and add a third for `InvalidOperationException`; enable EF's `EnableRetryOnFailure`; walk the chain.
 - **Why:** the acceptance run's 5 s database outage showed that outside `SaveChanges`, EF's default execution strategy wraps transient Npgsql errors in `InvalidOperationException`. D-24's filter missed it, so the job was dead-lettered at once and, since the fault consumer failed the same way, stayed Running. EF's retrying strategy would conflict with the explicit transactions in `CrawlStore`. Walking the chain covers every wrapper without listing them.
 - **Trade-off:** an unrelated exception that happens to wrap a transient Npgsql error is retried too; at worst that costs three extra attempts before dead-lettering.
+
+## D-29 Socket errors count as transient; retry window about a minute (amends D-24 and D-28)
+- **Decision:** `TransientErrors` also treats a `SocketException` anywhere in the chain as transient, and message retry is 5 attempts with exponential backoff from 1 s to 30 s instead of 3 attempts up to 10 s.
+- **Options:** match only `SocketError.HostNotFound`; enable EF's retrying execution strategy; keep the 10 s window.
+- **Why:** the clean-clone acceptance rerun stopped PostgreSQL mid-crawl. While the `db` container is down, Docker's DNS can't resolve its name, and Npgsql lets that `SocketException` through without wrapping it, so the third attempt dead-lettered the job. Postgres also needs a few seconds after restart, so a 10 s window was too short for even a brief outage. The fetcher converts every HTTP-side socket error into a page result, so a socket error reaching the consumer comes from the database or broker.
+- **Trade-off:** a genuinely broken database host is retried for about a minute before the job is dead-lettered, holding the consumer meanwhile.

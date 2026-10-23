@@ -22,6 +22,10 @@ public sealed class TransientErrorsTests
             new NpgsqlException("Failed to connect", new SocketException()))));
 
     [Fact]
+    public void An_unresolvable_database_host_is_transient() =>
+        Assert.True(TransientErrors.IsTransient(new SocketException((int)SocketError.HostNotFound)));
+
+    [Fact]
     public void A_unique_violation_is_not_transient() =>
         Assert.False(TransientErrors.IsTransient(new DbUpdateException("save failed", Postgres("23505"))));
 
