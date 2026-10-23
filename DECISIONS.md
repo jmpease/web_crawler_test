@@ -82,3 +82,9 @@ A numbered log of design decisions. Entries are never rewritten; a later entry s
 - **Decision:** checkpoints reprojected from the real start of slice 1 (1:18): 2:40 slices 0–3, 3:20 end-to-end via curl, 3:55 UI, 4:00 freeze.
 - **Why:** after D-12 and D-13, 180 m of must-have work remains against 162 m to freeze, so we are still about 20 m short.
 - **Trade-off / open:** Docker (7) and robustness (5) don't fit as estimated. The next must-have cut is pending Jim's ruling.
+
+## D-15 HTML parsing lives in Domain, with AngleSharp 1.8.5
+- **Decision:** `HtmlLinkExtractor` (AngleSharp) sits in Domain beside `UrlNormalizer` and `LinkAnalysis`. AngleSharp is 1.8.5, the latest 1.x, because 1.1.2 has a moderate-severity advisory (GHSA-pgww-w46g-26qg).
+- **Options:** parse in Infrastructure and pass hrefs to Domain; parse in Domain; regex extraction.
+- **Why:** parsing a string is pure computation with no I/O, so it keeps the extraction rules (including `<base href>`) under fast unit tests next to the normalization rules. A real parser handles malformed HTML that regex wouldn't.
+- **Trade-off:** Domain takes a third-party dependency (MIT, already pre-approved).

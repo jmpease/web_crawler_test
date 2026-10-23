@@ -3,7 +3,7 @@
 > Work in progress. Summary, architecture, message schema, idempotency, retry/DLQ, limitations and trade-offs are added as the slices land (see PLAN.md).
 
 ## Current scope
-Scaffold only: .NET 8 solution (Domain, Infrastructure, Api, Worker, unit and integration test projects) and a compose file for PostgreSQL and RabbitMQ.
+.NET 8 solution (Domain, Infrastructure, Api, Worker, unit and integration test projects) and a compose file for PostgreSQL and RabbitMQ. Domain: URL normalization, link extraction from HTML, same-host classification and the domain link ratio (same-domain links / all unique http(s) links; 0 when a page has none). No API or worker endpoints yet.
 
 ## Prerequisites
 - .NET 8 SDK (pinned by `global.json`)
