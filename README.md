@@ -3,7 +3,7 @@
 > Work in progress. Summary, architecture, message schema, idempotency, retry/DLQ, limitations and trade-offs are added as the slices land (see PLAN.md).
 
 ## Current scope
-.NET 8 solution (Domain, Infrastructure, Api, Worker, unit and integration test projects) and a compose file for PostgreSQL and RabbitMQ. Domain: URL normalization, link extraction from HTML, same-host classification and the domain link ratio (same-domain links / all unique http(s) links; 0 when a page has none). Persistence: EF Core schema for `jobs`, `pages` and `edges` with an initial migration, applied by the API at startup. API: create, get, tree and history endpoints, publishing one `CrawlJob` message per job to RabbitMQ, plus `/health`. Worker: a `CrawlJob` consumer that crawls the job breadth-first (same host only, within `maxDepth` and `maxPages`), stores each page's status, link counts, ratio and outgoing links, then marks the job Completed or Failed; plus `/health`. Not yet: message retry and fault handling (slice 5), Docker images for the services (slice 7), UI (slice 8).
+.NET 8 solution (Domain, Infrastructure, Api, Worker, unit and integration test projects) and a compose file for PostgreSQL and RabbitMQ. Domain: URL normalization, link extraction from HTML, same-host classification and the domain link ratio (same-domain links / all unique http(s) links; 0 when a page has none). Persistence: EF Core schema for `jobs`, `pages` and `edges` with an initial migration, applied by the API at startup. API: create, get, tree and history endpoints, publishing one `CrawlJob` message per job to RabbitMQ, plus `/health`. Worker: a `CrawlJob` consumer that crawls the job breadth-first (same host only, within `maxDepth` and `maxPages`), stores each page's status, link counts, ratio and outgoing links, then marks the job Completed or Failed; plus `/health`. UI (`web/`): start a crawl, a job page that polls until the job finishes and shows progress and the page tree with each page's ratio and links, and a paged history. Not yet: message retry and fault handling (slice 5), Docker images for the services (slice 7).
 
 ## Worker
 - One consumer per job (endpoint `crawl-job`). The frontier is the job's `Pending` pages in the database, taken shallowest first in discovery order, so a redelivered message resumes where the last attempt stopped. A message for a job that is already Completed, Failed or Canceled is acknowledged and ignored.
@@ -21,6 +21,11 @@ All errors are ProblemDetails (`application/problem+json`); validation errors ar
 | `GET /api/jobs/{id}/tree` | `{jobId, status, root}`; each node has `url, depth, status, domainLinkRatio, error, outgoingLinks[{url, isSameDomain}], children[]`. Children are in discovery order; links sorted by URL. |
 | `GET /api/jobs?page=1&pageSize=20` | `{items, page, pageSize, total}`, most recent first; `pageSize` 1–100. |
 | `GET /health` | `200 Healthy` when PostgreSQL and the RabbitMQ bus are reachable, otherwise `503`. |
+
+## UI
+Vite + React + TypeScript in `web/`, no UI framework. Routes: `/` starts a crawl (URL and max depth; validation errors from the API appear under each field), `/jobs/{id}` shows the job, `/history?page=N` lists jobs 20 per page, most recent first; a row opens its job.
+
+The job page polls `GET /api/jobs/{id}` every 1.5 s until the job is Completed, Failed or Canceled, and refetches the tree only when the processed count or status changes. Progress reads "processed / enqueued". Each tree node shows its status, URL, ratio (a dash when the page wasn't scored), depth, any error, and a collapsible list of outgoing links marked internal or external. A failed poll is shown and retried on the next tick; an unknown job id stops polling with a not-found message.
 
 ## Message schema
 ```json
@@ -42,6 +47,14 @@ docker compose up -d db rabbitmq
 dotnet run --project src/Crawler.Api
 dotnet run --project src/Crawler.Worker
 ```
+Then the UI (Node 20.19+ or 22.12+):
+```
+cd web
+npm ci
+npm run dev
+```
+Open `http://localhost:5173`. The UI calls the API at `http://localhost:5129`; set `VITE_API_URL` to point it elsewhere (and add that origin to `Cors__AllowedOrigins`).
+
 PostgreSQL listens on `localhost:5432`, RabbitMQ on `localhost:5672` (management UI on `http://localhost:15672`). The API listens on `http://localhost:5129`, the worker's `/health` on `http://localhost:5250`. Start the API first: it applies migrations.
 
 The API applies pending EF Core migrations when it starts; the worker never migrates (D-16).
@@ -64,6 +77,8 @@ All tests, including Testcontainers-based ones (needs Docker running and the `po
 TESTCONTAINERS_RYUK_DISABLED=true dotnet test
 ```
 API tests host the API with `WebApplicationFactory` and MassTransit's in-memory test harness in place of RabbitMQ. Validation tests need no database; persistence, 404, history, tree and health tests run on Testcontainers Postgres (`Category=Docker`).
+
+UI checks: `npm run build` in `web/` type-checks (`tsc`) and bundles; `npm test` runs Vitest. The one UI test renders the page tree to static markup (no DOM library) and checks nesting, ratios, link counts, errors and statuses.
 
 No test touches the network. `StubSite` is an `HttpMessageHandler` standing in for a website. Fetcher tests (fast) cover redirects, retries and content types through the real resilience pipeline. Crawl tests (`Category=Docker`) run `JobCrawler` over the local fixture site in `tests/Crawler.IntegrationTests/Fixtures/site` on real Postgres. They check BFS order, the depth limit, dedupe, a cycle, max pages, ratios and stored links, a failed start page, and that a second delivery of a completed job changes nothing.
 
@@ -89,5 +104,6 @@ Compose reads dev-only credentials from environment variables, with defaults:
 | `Jobs__MaxPages` | `200` | API (stored on each job) |
 | `Cors__AllowedOrigins__0` | `http://localhost:5173` (Vite dev server) | API |
 | `Database__MigrateOnStartup` | `true` | API |
+| `VITE_API_URL` (dev server or build environment) | `http://localhost:5129` | UI |
 
 `appsettings.Development.json` points at the compose database and broker with the dev credentials above.

@@ -75,7 +75,7 @@ Postgres-backed tests (D-6): Testcontainers on the locally installed `postgres:1
 | 5 | Event robustness: infra-only retry config, error queue, `Fault<CrawlJob>` consumer. Docker tests cut (D-12): documented as a manual check | — | Must | 10 m |
 | 6 | ~~Observability~~: folded into slices 3 and 4 (D-10) | `/health` hit in the slice 7 smoke run | — | 0 m |
 | 7 | Docker: one multi-stage Dockerfile shared by API and worker (build arg picks the project), full compose up, end-to-end smoke against a real small site | Manual smoke, recorded in README; `/health` on API and worker | Must | 15 m |
-| 8 | React UI: Start, Job Details (poll every 1.5 s until terminal; progress as "processed / enqueued" text; recursive tree with ratio), History (paged, clickable), loading/error states | Manual run; (cuttable) one Vitest for tree component | Must | 35 m |
+| 8 ✅ | React UI: Start, Job Details (poll every 1.5 s until terminal; progress as "processed / enqueued" text; recursive tree with ratio), History (paged, clickable), loading/error states | Manual run; (cuttable) one Vitest for tree component | Must | 35 m |
 | 9 | Transactional outbox on the API (MassTransit EF outbox) | Covered by slice 4 test still passing | Cuttable | 15 m |
 | 10 | Cancel job (API + worker skip + UI button) | API test: cancel → status Canceled; worker skips | Cuttable | 15 m |
 | 11 | GitHub Actions: restore, build, unit tests | Workflow YAML lint | Cuttable (cheap, do if time) | 10 m |
