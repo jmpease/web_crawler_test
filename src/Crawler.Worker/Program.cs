@@ -1,9 +1,17 @@
-using Crawler.Infrastructure.Persistence;
+using Crawler.Infrastructure.Health;
+using Crawler.Infrastructure.Messaging;
+using Crawler.Worker;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
+
 // The API owns migrations (D-16); the worker only reads and writes.
-builder.Services.AddCrawlerPersistence();
+builder.Services.AddJobCrawler(builder.Configuration);
+builder.Services.AddCrawlerMessaging(builder.Configuration, bus => bus.AddConsumer<CrawlJobConsumer>());
+builder.Services.AddCrawlerHealthChecks();
 
 var app = builder.Build();
+
+app.MapHealthChecks("/health");
 
 await app.RunAsync();
