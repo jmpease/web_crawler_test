@@ -148,3 +148,9 @@ A numbered log of design decisions. Entries are never rewritten; a later entry s
 - **Options:** keep Completed with a single Skipped page and document it; fail the job.
 - **Why:** a crawl whose start page couldn't be parsed has no tree and no ratios, so Completed would hide the problem (checklist W-6). The failure reason tells the user why.
 - **Trade-off:** a start URL that redirects to another host (for example `example.com` → `www.example.com`) now fails instead of completing empty; the reason names the target host so the user can resubmit with it.
+
+## D-26 Job summary: page counts by outcome and a page-limit flag
+- **Decision:** `GET /api/jobs/{id}` adds `pageCounts` (pending, fetched, skipped, failed) from one `GROUP BY status` over the job's pages, and every job response adds `maxPagesReached` (`pagesEnqueued >= maxPages`). History rows leave `pageCounts` null.
+- **Options:** counter columns on `jobs` kept by the worker; counts on history rows too; leave the summary as processed / enqueued.
+- **Why:** the spec asks for a status "summary" without defining it; outcome counts and whether the limit cut the crawl short are what a user needs to read a result (checklist W-4). The grouped query uses the `(job_id, …)` index and stays cheap at 200 pages per job, so no new columns or migration.
+- **Trade-off:** the job page runs this query on every 1.5 s poll while a job is running.

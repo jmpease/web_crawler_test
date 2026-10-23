@@ -120,6 +120,10 @@ public sealed class ApiPersistenceTests(PostgresFixture postgres) : IAsyncLifeti
         Assert.Equal(["https://example.com/about", "https://other.test/"], root.OutgoingLinks.Select(l => l.Url));
         var child = Assert.Single(root.Children);
         Assert.Equal(("https://example.com/about", 1, PageStatus.Pending), (child.Url, child.Depth, child.Status));
+
+        var job = await _client.GetFromJsonAsync<JobResponse>($"/api/jobs/{jobId}", Json);
+        Assert.Equal(new PageCounts(Pending: 1, Fetched: 1, Skipped: 0, Failed: 0), job!.PageCounts);
+        Assert.False(job.MaxPagesReached);
     }
 
     [Fact]

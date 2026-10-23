@@ -41,7 +41,17 @@ function JobSummary({ job }: { job: Job }) {
       <dt>Progress</dt>
       <dd>
         {job.pagesProcessed} / {job.pagesEnqueued} pages processed (max {job.maxPages}, depth {job.maxDepth})
+        {job.maxPagesReached && <span className="muted"> · page limit reached, further links not enqueued</span>}
       </dd>
+      {job.pageCounts && (
+        <>
+          <dt>Pages</dt>
+          <dd>
+            {job.pageCounts.fetched} fetched, {job.pageCounts.skipped} skipped, {job.pageCounts.failed} failed,{' '}
+            {job.pageCounts.pending} pending
+          </dd>
+        </>
+      )}
       {job.failureReason && (
         <>
           <dt>Failure</dt>

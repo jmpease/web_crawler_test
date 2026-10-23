@@ -23,7 +23,7 @@ All errors are ProblemDetails (`application/problem+json`); validation errors ar
 | Method and path | Result |
 |---|---|
 | `POST /api/jobs` `{"url": "https://example.com", "maxDepth": 2}` | `202` `{"jobId"}` with `Location: /api/jobs/{id}`. `url` must be an absolute http(s) URL (max 2048 chars); `maxDepth` is optional, 0–5, default 2. Inserts the job and its root page (depth 0, `Pending`) in one transaction, then publishes `CrawlJob`. |
-| `GET /api/jobs/{id}` | Status, timestamps, failure reason and progress (`pagesProcessed` / `pagesEnqueued`, `maxPages`); `404` if unknown. |
+| `GET /api/jobs/{id}` | Status, timestamps, failure reason, progress (`pagesProcessed` / `pagesEnqueued`, `maxPages`), `maxPagesReached`, and `pageCounts` by outcome (`pending`, `fetched`, `skipped`, `failed`); `404` if unknown. History rows carry the same fields with `pageCounts` null. |
 | `GET /api/jobs/{id}/tree` | `{jobId, status, root}`; each node has `url, depth, status, domainLinkRatio, error, outgoingLinks[{url, isSameDomain}], children[]`. Children are in discovery order; links sorted by URL. |
 | `GET /api/jobs?page=1&pageSize=20` | `{items, page, pageSize, total}`, most recent first; `pageSize` 1–100. |
 | `GET /health` | `200 Healthy` when PostgreSQL and the RabbitMQ bus are reachable, otherwise `503`. |
@@ -31,7 +31,7 @@ All errors are ProblemDetails (`application/problem+json`); validation errors ar
 ## UI
 Vite + React + TypeScript in `web/`, no UI framework. Routes: `/` starts a crawl (URL and max depth; validation errors from the API appear under each field), `/jobs/{id}` shows the job, `/history?page=N` lists jobs 20 per page, most recent first; a row opens its job.
 
-The job page polls `GET /api/jobs/{id}` every 1.5 s until the job is Completed, Failed or Canceled, and refetches the tree only when the processed count or status changes. It shows the job ID, URL, status, progress ("processed / enqueued"), any failure reason and the created, started and completed times. Each tree node shows its status, URL, ratio (a dash when the page wasn't scored), depth, any error, and a collapsible list of outgoing links marked internal or external. A failed poll is shown and retried on the next tick; an unknown job id stops polling with a not-found message.
+The job page polls `GET /api/jobs/{id}` every 1.5 s until the job is Completed, Failed or Canceled, and refetches the tree only when the processed count or status changes. It shows the job ID, URL, status, progress ("processed / enqueued", plus a note when the page limit was reached), page counts by outcome, any failure reason and the created, started and completed times. Each tree node shows its status, URL, ratio (a dash when the page wasn't scored), depth, any error, and a collapsible list of outgoing links marked internal or external. A failed poll is shown and retried on the next tick; an unknown job id stops polling with a not-found message.
 
 ## Message schema
 ```json

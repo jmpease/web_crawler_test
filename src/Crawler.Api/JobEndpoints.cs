@@ -77,7 +77,7 @@ public static partial class JobEndpoints
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        return TypedResults.Ok(new JobPageResponse(jobs.Select(JobResponse.From).ToList(), page, pageSize, total));
+        return TypedResults.Ok(new JobPageResponse(jobs.Select(j => JobResponse.From(j)).ToList(), page, pageSize, total));
     }
 
     private static async Task<Results<Ok<JobResponse>, ProblemHttpResult>> GetJob(
@@ -86,7 +86,17 @@ public static partial class JobEndpoints
         CancellationToken cancellationToken)
     {
         var job = await db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
-        return job is null ? JobNotFound(id) : TypedResults.Ok(JobResponse.From(job));
+        if (job is null)
+        {
+            return JobNotFound(id);
+        }
+
+        var byStatus = await db.Pages.AsNoTracking()
+            .Where(p => p.JobId == id)
+            .GroupBy(p => p.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.Status, g => g.Count, cancellationToken);
+        return TypedResults.Ok(JobResponse.From(job, PageCounts.From(byStatus)));
     }
 
     /// <summary>One query for pages and one for links; the tree is assembled in memory (no N+1).</summary>

@@ -15,6 +15,16 @@ export interface Job {
   completedAt: string | null;
   pagesEnqueued: number;
   pagesProcessed: number;
+  maxPagesReached: boolean;
+  /** Present on a single job (GET /api/jobs/{id}), null in history rows. */
+  pageCounts: PageCounts | null;
+}
+
+export interface PageCounts {
+  pending: number;
+  fetched: number;
+  skipped: number;
+  failed: number;
 }
 
 export interface JobPage {

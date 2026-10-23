@@ -18,9 +18,12 @@ public sealed record JobResponse(
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
     int PagesEnqueued,
-    int PagesProcessed)
+    int PagesProcessed,
+    bool MaxPagesReached,
+    PageCounts? PageCounts)
 {
-    public static JobResponse From(Job job) => new(
+    /// <summary><paramref name="pageCounts"/> is filled in only for a single job, not for history rows.</summary>
+    public static JobResponse From(Job job, PageCounts? pageCounts = null) => new(
         job.Id,
         job.Url,
         job.MaxDepth,
@@ -31,7 +34,19 @@ public sealed record JobResponse(
         job.StartedAt,
         job.CompletedAt,
         job.PagesEnqueued,
-        job.PagesProcessed);
+        job.PagesProcessed,
+        job.PagesEnqueued >= job.MaxPages,
+        pageCounts);
+}
+
+/// <summary>The job's pages by outcome; Pending pages are still in the frontier.</summary>
+public sealed record PageCounts(int Pending, int Fetched, int Skipped, int Failed)
+{
+    public static PageCounts From(IReadOnlyDictionary<PageStatus, int> byStatus) => new(
+        byStatus.GetValueOrDefault(PageStatus.Pending),
+        byStatus.GetValueOrDefault(PageStatus.Fetched),
+        byStatus.GetValueOrDefault(PageStatus.Skipped),
+        byStatus.GetValueOrDefault(PageStatus.Failed));
 }
 
 public sealed record JobPageResponse(IReadOnlyList<JobResponse> Items, int Page, int PageSize, int Total);
