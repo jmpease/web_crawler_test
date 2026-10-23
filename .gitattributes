@@ -1,0 +1,32 @@
+# Default: Git decides text vs binary; text is stored with LF in the repo,
+# and checked out with your platform's native line endings
+* text=auto
+
+# Must stay LF everywhere (run inside Linux containers)
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+docker-compose*.yml text eol=lf
+
+# Windows-only scripts and VS files keep CRLF
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.sln  text eol=crlf
+
+# Source and config (explicit for clarity)
+*.cs     text diff=csharp
+*.csproj text
+*.props  text
+*.json   text
+*.md     text
+*.ts     text
+*.tsx    text
+*.css    text
+*.html   text
+*.yml    text
+
+# Binaries
+*.png binary
+*.jpg binary
+*.ico binary
+*.dll binary
