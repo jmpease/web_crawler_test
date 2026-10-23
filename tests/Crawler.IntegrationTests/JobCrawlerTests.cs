@@ -146,6 +146,19 @@ public sealed class JobCrawlerTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_non_html_start_page_fails_the_job()
+    {
+        var jobId = await InsertJob(maxDepth: 2, startPath: "/doc.pdf");
+
+        await Crawl(jobId);
+
+        var job = await WithDb(db => db.Jobs.AsNoTracking().SingleAsync());
+        Assert.Equal(JobStatus.Failed, job.Status);
+        Assert.StartsWith("Start page skipped: Not HTML (application/pdf)", job.FailureReason);
+        Assert.NotNull(job.CompletedAt);
+    }
+
+    [Fact]
     public async Task A_dead_lettered_job_is_failed_unless_it_already_finished()
     {
         var stuckJobId = await InsertJob(maxDepth: 2);
@@ -173,12 +186,12 @@ public sealed class JobCrawlerTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     /// <summary>Stores a job and its root page the way the API does.</summary>
-    private Task<Guid> InsertJob(int maxDepth, int maxPages = CrawlLimits.DefaultMaxPages) => WithDb(async db =>
+    private Task<Guid> InsertJob(int maxDepth, int maxPages = CrawlLimits.DefaultMaxPages, string startPath = "/") => WithDb(async db =>
     {
         var job = new Job
         {
             Id = Guid.NewGuid(),
-            Url = $"{Origin}/",
+            Url = $"{Origin}{startPath}",
             StartHost = "site.test",
             MaxDepth = maxDepth,
             MaxPages = maxPages,

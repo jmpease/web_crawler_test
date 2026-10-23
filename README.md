@@ -8,7 +8,7 @@
 ## Worker
 - One consumer per job (endpoint `crawl-job`). The frontier is the job's `Pending` pages in the database, taken shallowest first in discovery order, so a redelivered message resumes where the last attempt stopped. A message for a job that is already Completed, Failed or Canceled is acknowledged and ignored.
 - Each page is fetched, then its outcome, outgoing links (`edges`) and new same-host child pages are written in one transaction with the job row locked (`FOR UPDATE`). The page update is conditional on `status = 'Pending'`, so a concurrent duplicate delivery can't count a page twice. Children are enqueued only while `depth + 1 ≤ maxDepth` and the job is under `maxPages`.
-- Page statuses: `Fetched` (HTML, links parsed), `Skipped` (not HTML, body over 2 MB, or a redirect off the start host), `Failed` (HTTP error after retries, network error, timeout, redirect loop or more than 5 redirects). The job is `Failed` only if the start page failed; otherwise `Completed`.
+- Page statuses: `Fetched` (HTML, links parsed), `Skipped` (not HTML, body over 2 MB, or a redirect off the start host), `Failed` (HTTP error after retries, network error, timeout, redirect loop or more than 5 redirects). The job is `Failed` if the start page wasn't Fetched (it failed, wasn't HTML, or redirected off-host), with the reason "Start page failed: …" or "Start page skipped: …"; otherwise `Completed`, with per-page statuses in the tree.
 - Fetching: descriptive `User-Agent`, no automatic redirects (each hop is checked against the start host before it is requested), and the standard resilience handler per host: 10 s per attempt, 20 s total, 3 retries with exponential backoff (from 500 ms) and jitter on 5xx, 408, 429, network errors and timeouts. 4xx and non-HTML responses aren't retried. The body is read under a separate 10 s timeout. HTTP failures become page results, never exceptions, so they don't trigger message retries (D-9).
 
 ## Retries and dead-lettering
@@ -31,7 +31,7 @@ All errors are ProblemDetails (`application/problem+json`); validation errors ar
 ## UI
 Vite + React + TypeScript in `web/`, no UI framework. Routes: `/` starts a crawl (URL and max depth; validation errors from the API appear under each field), `/jobs/{id}` shows the job, `/history?page=N` lists jobs 20 per page, most recent first; a row opens its job.
 
-The job page polls `GET /api/jobs/{id}` every 1.5 s until the job is Completed, Failed or Canceled, and refetches the tree only when the processed count or status changes. Progress reads "processed / enqueued". Each tree node shows its status, URL, ratio (a dash when the page wasn't scored), depth, any error, and a collapsible list of outgoing links marked internal or external. A failed poll is shown and retried on the next tick; an unknown job id stops polling with a not-found message.
+The job page polls `GET /api/jobs/{id}` every 1.5 s until the job is Completed, Failed or Canceled, and refetches the tree only when the processed count or status changes. It shows the job ID, URL, status, progress ("processed / enqueued"), any failure reason and the created, started and completed times. Each tree node shows its status, URL, ratio (a dash when the page wasn't scored), depth, any error, and a collapsible list of outgoing links marked internal or external. A failed poll is shown and retried on the next tick; an unknown job id stops polling with a not-found message.
 
 ## Message schema
 ```json

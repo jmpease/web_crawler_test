@@ -49,14 +49,18 @@ public sealed partial class JobCrawler(CrawlStore store, PageFetcher fetcher, IL
         }
     }
 
-    /// <summary>The job fails only when its start page failed; otherwise per-page statuses tell the story.</summary>
+    /// <summary>
+    /// The job fails when its start page couldn't be crawled (failed, or skipped as non-HTML or redirected off-host),
+    /// since there is nothing to show; otherwise per-page statuses tell the story (D-25).
+    /// </summary>
     private async Task FinishAsync(Guid jobId, CancellationToken cancellationToken)
     {
         var root = await store.GetRootPageAsync(jobId, cancellationToken);
-        if (root.Status == PageStatus.Failed)
+        if (root.Status != PageStatus.Fetched)
         {
-            await store.FinishAsync(jobId, JobStatus.Failed, $"Start page failed: {root.Error}", cancellationToken);
-            LogJobFailed(logger, root.Error);
+            var reason = $"Start page {root.Status.ToString().ToLowerInvariant()}: {root.Error}";
+            await store.FinishAsync(jobId, JobStatus.Failed, reason, cancellationToken);
+            LogJobFailed(logger, reason);
         }
         else
         {
@@ -79,8 +83,8 @@ public sealed partial class JobCrawler(CrawlStore store, PageFetcher fetcher, IL
     [LoggerMessage(Level = LogLevel.Information, Message = "{Url} was already crawled by another delivery; result discarded")]
     private static partial void LogPageAlreadyCrawled(ILogger logger, string url);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Job failed: start page failed ({Error})")]
-    private static partial void LogJobFailed(ILogger logger, string? error);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Job failed: {Reason}")]
+    private static partial void LogJobFailed(ILogger logger, string reason);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Job completed")]
     private static partial void LogJobCompleted(ILogger logger);

@@ -54,7 +54,7 @@ export function StartPage() {
           {fieldError('maxDepth') && <span className="field-error">{fieldError('maxDepth')}</span>}
         </label>
         <button type="submit" disabled={submitting || url.trim() === ''}>
-          {submitting ? 'Starting…' : 'Start crawl'}
+          {submitting ? 'Starting…' : 'Start Crawl'}
         </button>
         {error && !hasFieldErrors && <p className="error">{error.message}</p>}
       </form>

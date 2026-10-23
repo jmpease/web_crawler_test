@@ -27,6 +27,10 @@ export function JobPage() {
 function JobSummary({ job }: { job: Job }) {
   return (
     <dl className="summary">
+      <dt>Job ID</dt>
+      <dd>
+        <code>{job.id}</code>
+      </dd>
       <dt>URL</dt>
       <dd>{job.url}</dd>
       <dt>Status</dt>

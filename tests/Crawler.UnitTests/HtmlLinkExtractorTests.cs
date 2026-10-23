@@ -18,6 +18,16 @@ public class HtmlLinkExtractorTests
     }
 
     [Fact]
+    public void Page_with_only_ignored_scheme_links_has_ratio_zero()
+    {
+        const string html = """<a href="mailto:x@example.com">m</a><a href="tel:123">t</a><a href="javascript:void(0)">j</a>""";
+
+        var result = HtmlLinkExtractor.Analyze(html, Page, Host);
+
+        Assert.Equal((0, 0, 0.0), (result.OutgoingLinks, result.SameDomainLinks, result.DomainLinkRatio));
+    }
+
+    [Fact]
     public void Mixed_links_give_same_domain_share_of_unique_links()
     {
         const string html = """
