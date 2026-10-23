@@ -59,3 +59,26 @@ A numbered log of design decisions. Entries are never rewritten; a later entry s
 - **Options:** (A) trim scope only; (B) reorder only; (C) both. Jim chose C.
 - **Why:** must-have slices totalled 245 m against a 210 m window. Trimming brings it to 225 m; reordering puts the visible deliverable and the required compose check ahead of the remaining overrun.
 - **Trade-off:** slice 5 runs last with about 15 of its 30 m. Its retry config and Fault consumer go in first; its Docker tests are the first must-have to cut, documented as a manual check. A slip in slices 0–4 now pushes the UI past 3:30.
+
+## D-11 Scaffold choices
+- **Decision:** `global.json` pins SDK 8.0.426 (roll forward within 8.0.x). The worker is a web project so it can serve `/health`. Compose and Testcontainers use the locally installed `postgres:16-alpine` and `rabbitmq:3.13-management` images. Analyzers at `latest-recommended`; warnings stay warnings. The test template's `coverlet.collector` was removed because it isn't on the approved package list.
+- **Options:** default SDK (10.x is installed and would win); a generic-host worker plus a separate health listener; `postgres:16` (not present locally).
+- **Why:** the assessment requires .NET 8; one hosting model for both services; no image pulls during the timebox.
+- **Trade-off:** the worker carries the ASP.NET Core runtime; no coverage collection.
+
+## D-12 Cut slice 5's Docker tests
+- **Decision:** drop the automated duplicate-delivery and Fault-consumer tests. Slice 5 keeps the retry configuration and the Fault consumer; the README documents a manual check instead.
+- **Options:** keep them and cut elsewhere; cut them now; cut them at the end if time runs out.
+- **Why:** slice 0 finished at 1:18, 33 m late (the plan review used the start of the window), leaving about 48 m more must-have work than time. These tests were next in the cut order.
+- **Trade-off:** duplicate delivery and fault handling have no automated coverage. The slice 4 integration test still covers a second delivery of a completed job.
+
+## D-13 One message per job (supersedes D-2; amends D-7)
+- **Decision:** the API publishes one `CrawlJob { jobId }`; one consumer crawls the whole job. The BFS frontier is the job's `Pending` pages in the database, taken in `(depth, id)` order, so a redelivered message resumes where the previous attempt stopped. A `Fault<CrawlJob>` consumer marks the job Failed. The pages/edges schema, idempotent page writes and the API are unchanged.
+- **Options:** keep one message per page; switch now; switch at the 2:55 checkpoint as D-2 allowed.
+- **Why:** removes the per-page completion race, cross-message counters and most duplicate-delivery handling, saving about 30 m across slices 4–5. Switching now avoids building the per-page path in slices 2–3 and then discarding it.
+- **Trade-off:** no parallelism across a job's pages; one slow site holds a consumer for the whole crawl. Idempotency is at job level (Completed/Failed jobs are skipped) plus the existing `WHERE status='Pending'` page writes. The messaging story in the write-up is simpler.
+
+## D-14 Schedule after D-12 and D-13
+- **Decision:** checkpoints reprojected from the real start of slice 1 (1:18): 2:40 slices 0–3, 3:20 end-to-end via curl, 3:55 UI, 4:00 freeze.
+- **Why:** after D-12 and D-13, 180 m of must-have work remains against 162 m to freeze, so we are still about 20 m short.
+- **Trade-off / open:** Docker (7) and robustness (5) don't fit as estimated. The next must-have cut is pending Jim's ruling.
