@@ -30,5 +30,45 @@ services:
       timeout: 5s
       retries: 12
 
+  api:
+    build:
+      context: .
+      args:
+        PROJECT: Crawler.Api
+    environment:
+      ConnectionStrings__Crawler: Host=db;Port=5432;Database=${POSTGRES_DB:-crawler};Username=${POSTGRES_USER:-crawler};Password=${POSTGRES_PASSWORD:-crawler_dev}
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: ${RABBITMQ_USER:-crawler}
+      RabbitMq__Password: ${RABBITMQ_PASSWORD:-crawler_dev}
+    ports:
+      - "5129:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # The API applies migrations (D-16). The worker only touches tables when a message arrives,
+  # and messages are only published once the API has migrated and is serving requests.
+  worker:
+    build:
+      context: .
+      args:
+        PROJECT: Crawler.Worker
+    environment:
+      ConnectionStrings__Crawler: Host=db;Port=5432;Database=${POSTGRES_DB:-crawler};Username=${POSTGRES_USER:-crawler};Password=${POSTGRES_PASSWORD:-crawler_dev}
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: ${RABBITMQ_USER:-crawler}
+      RabbitMq__Password: ${RABBITMQ_PASSWORD:-crawler_dev}
+    ports:
+      - "5250:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      api:
+        condition: service_started
+
 volumes:
   db-data:

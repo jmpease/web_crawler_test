@@ -3,7 +3,7 @@
 > Work in progress. Summary, architecture, message schema, idempotency, retry/DLQ, limitations and trade-offs are added as the slices land (see PLAN.md).
 
 ## Current scope
-.NET 8 solution (Domain, Infrastructure, Api, Worker, unit and integration test projects) and a compose file for PostgreSQL and RabbitMQ. Domain: URL normalization, link extraction from HTML, same-host classification and the domain link ratio (same-domain links / all unique http(s) links; 0 when a page has none). Persistence: EF Core schema for `jobs`, `pages` and `edges` with an initial migration, applied by the API at startup. API: create, get, tree and history endpoints, publishing one `CrawlJob` message per job to RabbitMQ, plus `/health`. Worker: a `CrawlJob` consumer that crawls the job breadth-first (same host only, within `maxDepth` and `maxPages`), stores each page's status, link counts, ratio and outgoing links, then marks the job Completed or Failed; plus `/health`. UI (`web/`): start a crawl, a job page that polls until the job finishes and shows progress and the page tree with each page's ratio and links, and a paged history. Not yet: message retry and fault handling (slice 5), Docker images for the services (slice 7).
+.NET 8 solution (Domain, Infrastructure, Api, Worker, unit and integration test projects) and a compose file that runs PostgreSQL, RabbitMQ, the API and the worker. Domain: URL normalization, link extraction from HTML, same-host classification and the domain link ratio (same-domain links / all unique http(s) links; 0 when a page has none). Persistence: EF Core schema for `jobs`, `pages` and `edges` with an initial migration, applied by the API at startup. API: create, get, tree and history endpoints, publishing one `CrawlJob` message per job to RabbitMQ, plus `/health`. Worker: a `CrawlJob` consumer that crawls the job breadth-first (same host only, within `maxDepth` and `maxPages`), stores each page's status, link counts, ratio and outgoing links, then marks the job Completed or Failed; plus `/health`. UI (`web/`): start a crawl, a job page that polls until the job finishes and shows progress and the page tree with each page's ratio and links, and a paged history. Not yet: message retry and fault handling (slice 5).
 
 ## Worker
 - One consumer per job (endpoint `crawl-job`). The frontier is the job's `Pending` pages in the database, taken shallowest first in discovery order, so a redelivered message resumes where the last attempt stopped. A message for a job that is already Completed, Failed or Canceled is acknowledged and ignored.
@@ -34,14 +34,20 @@ CrawlJob { "jobId": "guid" }
 Published to the `Crawler.Infrastructure.Messaging:CrawlJob` exchange with the MassTransit envelope's `correlationId` set to the job id. Delivery is at-least-once.
 
 ## Logging
-JSON console logs with scopes. Every request under `/api/jobs/{id}`, and job creation, logs inside a scope carrying `correlationId` = job id. In the worker, every log line for a message carries `correlationId` (job id) and `messageId`, and per-page lines add `pageId`. Page URLs are logged; page bodies never are.
+JSON console logs with scopes. Every request under `/api/jobs/{id}`, and job creation, logs inside a scope carrying `correlationId` = job id. In the worker, every log line for a message carries `correlationId` (job id) and `messageId`, and per-page lines add `pageId`. Page URLs are logged; page bodies never are. The worker logs Polly (retry pipeline) at Warning and above, so retries and failures show but successful attempts don't.
 
 ## Prerequisites
 - .NET 8 SDK (pinned by `global.json`)
 - Docker Desktop
 
 ## Run
-Start the infrastructure, then the API and the worker:
+Everything except the UI in Docker:
+```
+docker compose up --build
+```
+The API is on `http://localhost:5129` and the worker's `/health` on `http://localhost:5250`. Both images are built from the one `Dockerfile`; the `PROJECT` build arg picks `Crawler.Api` or `Crawler.Worker`. The containers run in the `Production` environment and get their connection settings from compose, which builds them from the credential variables under Configuration. Then start the UI as below; it calls the API on the same port either way.
+
+Or run the API and worker from source, with only the infrastructure in Docker:
 ```
 docker compose up -d db rabbitmq
 dotnet run --project src/Crawler.Api
@@ -80,7 +86,9 @@ API tests host the API with `WebApplicationFactory` and MassTransit's in-memory 
 
 UI checks: `npm run build` in `web/` type-checks (`tsc`) and bundles; `npm test` runs Vitest. The one UI test renders the page tree to static markup (no DOM library) and checks nesting, ratios, link counts, errors and statuses.
 
-No test touches the network. `StubSite` is an `HttpMessageHandler` standing in for a website. Fetcher tests (fast) cover redirects, retries and content types through the real resilience pipeline. Crawl tests (`Category=Docker`) run `JobCrawler` over the local fixture site in `tests/Crawler.IntegrationTests/Fixtures/site` on real Postgres. They check BFS order, the depth limit, dedupe, a cycle, max pages, ratios and stored links, a failed start page, and that a second delivery of a completed job changes nothing.
+Manual smoke run (2026-10-23, `docker compose down -v` then `docker compose up --build`): API and worker `/health` both `200 Healthy`. `https://example.com` at depth 1 finished Completed with 1 page Fetched; that page currently has no links, so its ratio is 0. `https://books.toscrape.com` at depth 1 finished Completed in about 4 s, with 74 of 74 pages Fetched and a root ratio of 1. Worker log lines carry `correlationId`, `messageId` and `pageId`, and no HTML appears in the logs.
+
+No automated test touches the network. `StubSite` is an `HttpMessageHandler` standing in for a website. Fetcher tests (fast) cover redirects, retries and content types through the real resilience pipeline. Crawl tests (`Category=Docker`) run `JobCrawler` over the local fixture site in `tests/Crawler.IntegrationTests/Fixtures/site` on real Postgres. They check BFS order, the depth limit, dedupe, a cycle, max pages, ratios and stored links, a failed start page, and that a second delivery of a completed job changes nothing.
 
 ## Configuration
 Compose reads dev-only credentials from environment variables, with defaults:
