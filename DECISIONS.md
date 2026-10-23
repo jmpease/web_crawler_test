@@ -160,3 +160,9 @@ A numbered log of design decisions. Entries are never rewritten; a later entry s
 - **Options:** build the outbox for the event-robustness score; build cancel; spend the time on docs and acceptance.
 - **Why:** the rubric accepts the publish-after-commit gap if it is "handled or documented", and cancel is optional. The README was missing most of its required sections, and 20 minutes wasn't enough for them.
 - **Trade-off:** the outbox gap and the lack of an SSRF guard remain, stated as known limitations with fixes listed under next steps.
+
+## D-28 Transient check walks the whole exception chain (supersedes D-24's filter)
+- **Decision:** `TransientErrors.IsTransient` returns the `IsTransient` of the first `NpgsqlException` found anywhere in the exception's inner-exception chain. Retry counts, backoff and dead-lettering are unchanged from D-24.
+- **Options:** keep the two explicit shapes and add a third for `InvalidOperationException`; enable EF's `EnableRetryOnFailure`; walk the chain.
+- **Why:** the acceptance run's 5 s database outage showed that outside `SaveChanges`, EF's default execution strategy wraps transient Npgsql errors in `InvalidOperationException`. D-24's filter missed it, so the job was dead-lettered at once and, since the fault consumer failed the same way, stayed Running. EF's retrying strategy would conflict with the explicit transactions in `CrawlStore`. Walking the chain covers every wrapper without listing them.
+- **Trade-off:** an unrelated exception that happens to wrap a transient Npgsql error is retried too; at worst that costs three extra attempts before dead-lettering.

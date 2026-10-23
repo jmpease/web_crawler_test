@@ -16,6 +16,12 @@ public sealed class TransientErrorsTests
         Assert.True(TransientErrors.IsTransient(new DbUpdateException("save failed", Postgres("40001"))));
 
     [Fact]
+    public void A_dropped_connection_wrapped_by_efs_execution_strategy_is_transient() =>
+        Assert.True(TransientErrors.IsTransient(new InvalidOperationException(
+            "An exception has been raised that is likely due to a transient failure.",
+            new NpgsqlException("Failed to connect", new SocketException()))));
+
+    [Fact]
     public void A_unique_violation_is_not_transient() =>
         Assert.False(TransientErrors.IsTransient(new DbUpdateException("save failed", Postgres("23505"))));
 
