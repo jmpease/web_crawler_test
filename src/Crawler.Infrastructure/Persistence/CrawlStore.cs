@@ -107,6 +107,22 @@ public sealed class CrawlStore(CrawlerDbContext db)
                 .SetProperty(j => j.CompletedAt, now), cancellationToken);
     }
 
+    /// <summary>
+    /// Fails a job that is still Pending or Running, for a dead-lettered message. Returns false when the job is missing
+    /// or already finished, so a late or duplicate fault can't overwrite a Completed job.
+    /// </summary>
+    public async Task<bool> FailAsync(Guid jobId, string failureReason, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var updated = await db.Jobs
+            .Where(j => j.Id == jobId && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(j => j.Status, JobStatus.Failed)
+                .SetProperty(j => j.FailureReason, failureReason)
+                .SetProperty(j => j.CompletedAt, now), cancellationToken);
+        return updated == 1;
+    }
+
     private async Task<bool> MarkPageAsync(PendingPage page, PageOutcome outcome, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;

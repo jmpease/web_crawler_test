@@ -145,6 +145,27 @@ public sealed class JobCrawlerTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(1, job.PagesProcessed);
     }
 
+    [Fact]
+    public async Task A_dead_lettered_job_is_failed_unless_it_already_finished()
+    {
+        var stuckJobId = await InsertJob(maxDepth: 2);
+        var finishedJobId = await InsertJob(maxDepth: 0);
+        await Crawl(finishedJobId);
+
+        var (stuckFailed, finishedFailed) = await WithDb(async db =>
+        {
+            var store = new CrawlStore(db);
+            return (await store.FailAsync(stuckJobId, "poison", CancellationToken.None),
+                await store.FailAsync(finishedJobId, "late fault", CancellationToken.None));
+        });
+
+        Assert.Equal((true, false), (stuckFailed, finishedFailed));
+        var jobs = await WithDb(db => db.Jobs.AsNoTracking().ToDictionaryAsync(j => j.Id));
+        Assert.Equal((JobStatus.Failed, "poison"), (jobs[stuckJobId].Status, jobs[stuckJobId].FailureReason));
+        Assert.NotNull(jobs[stuckJobId].CompletedAt);
+        Assert.Equal((JobStatus.Completed, null), (jobs[finishedJobId].Status, jobs[finishedJobId].FailureReason));
+    }
+
     private async Task Crawl(Guid jobId)
     {
         await using var scope = _services.CreateAsyncScope();
