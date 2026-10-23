@@ -1,12 +1,21 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Crawler.Infrastructure.Persistence;
 
 public static class PersistenceExtensions
 {
-    public static IServiceCollection AddCrawlerPersistence(this IServiceCollection services, string connectionString) =>
-        services.AddDbContext<CrawlerDbContext>(options => options.UseNpgsql(connectionString));
+    /// <summary>
+    /// Registers the DbContext. The connection string is read from the final configuration when the context is
+    /// first resolved, so test hosts can override it.
+    /// </summary>
+    public static IServiceCollection AddCrawlerPersistence(this IServiceCollection services) =>
+        services.AddDbContext<CrawlerDbContext>((sp, options) => options.UseNpgsql(GetConnectionString(sp)));
+
+    public static string GetConnectionString(IServiceProvider services) =>
+        services.GetRequiredService<IConfiguration>().GetConnectionString("Crawler")
+            ?? throw new InvalidOperationException("Connection string 'Crawler' is not configured.");
 
     /// <summary>
     /// Applies pending migrations. Only the API calls this at startup, so two processes never race to migrate (D-16).

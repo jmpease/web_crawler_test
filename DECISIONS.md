@@ -100,3 +100,15 @@ A numbered log of design decisions. Entries are never rewritten; a later entry s
 - **Options:** turn off Smart App Control (irreversible without a Windows reset); run in the SDK container.
 - **Why:** it keeps the machine's security policy intact and needs no repo changes.
 - **Trade-off:** each check costs a container start. Local environment only; nothing in the repo depends on it.
+
+## D-18 API wiring: MassTransit 8.5.12, built-in bus health check, late-bound connection string
+- **Decision:** MassTransit.RabbitMQ 8.5.12 (latest 8.x) with kebab-case endpoint names. `/health` combines AspNetCore.HealthChecks.NpgSql 8.0.2 with the bus health check MassTransit registers itself; AspNetCore.HealthChecks.Rabbitmq isn't used. The DbContext and the Postgres check read `ConnectionStrings:Crawler` from the final configuration when first resolved, not in `Program`. `Database:MigrateOnStartup` (default true) lets tests skip migration. The publish after the insert isn't tied to the request's cancellation token.
+- **Options:** the Rabbitmq health-check package (opens its own connection; its RabbitMQ.Client major version must match MassTransit's); reading config eagerly in `Program`; publishing with the request token.
+- **Why:** the bus check reports the connection the API actually publishes on, with one package fewer. Eager reads in `Program` happen before `WebApplicationFactory` applies test settings. A client disconnect between the commit and the publish would otherwise strand a saved job without a message.
+- **Trade-off:** a missing connection string fails on the first request, not at startup. The outbox gap (crash between commit and publish) remains until slice 9.
+
+## D-19 API test split and tree response shape
+- **Decision:** validation and routing tests run in the fast loop against an API with an unreachable database. Persistence, 404, history, tree and health tests run on Testcontainers Postgres with the API's own startup migration; Ryuk is disabled (`TESTCONTAINERS_RYUK_DISABLED=true`) so no image is pulled. Tree nodes add `error` and per-link `isSameDomain` to the planned shape; the tree is built by `PageTree` in Domain (the plan's `TreeBuilder`).
+- **Options:** EF in-memory provider for 404s (not an approved package, and it ignores Postgres behavior); all API tests on Docker; plain URL strings for links.
+- **Why:** 400s need no database, so they stay fast; 404s need real queries. The UI can show why a page failed and which links are external without a second call.
+- **Trade-off:** if a test run is killed, its Postgres container is left behind. Responses are slightly larger.
