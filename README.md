@@ -9,6 +9,10 @@ Quick start: `docker compose up --build`, then `cd web && npm ci && npm run dev`
 
 This was built in one sitting on 2026-10-23 inside the assessment's 4-hour timebox (12:30–4:20 pm ET, including these docs), using Claude Code as a pair programmer. `PLAN.md` holds the plan and slice order; `DECISIONS.md` logs every design decision with the options considered and the trade-off.
 
+### Post-assessment documentation
+Added after the assessment window closed (2026-10-23, 12:30–4:20 pm ET). These files change no code; the code, tests and the rest of this README and DECISIONS.md are as submitted.
+- [docs/REVIEWER_GUIDE.md](docs/REVIEWER_GUIDE.md) (2026-10-26): what the project does, its architecture, the reasoning behind each decision, what's missing, and what I'd improve in the current code.
+
 ## Architecture
 ```
 React UI ──HTTP──> Crawl API ──CrawlJob──> RabbitMQ ──> Crawl Worker ──HTTP──> target site
