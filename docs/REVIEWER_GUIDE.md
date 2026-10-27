@@ -131,6 +131,7 @@ Grouped by theme. D-numbers link to the full entry, which lists the options cons
 - **What was kept:** the per-page idempotent schema survived intact. One consumer now owns a whole job and pulls pages from the job's `Pending` rows.
 - **Benefits:** redelivery is a resume rather than a restart, and completion is simply "no pending rows left".
 - **Cost:** no parallelism within a job, and one slow site holds a consumer for the whole crawl.
+- **Full comparison:** [CRAWL_FRONTIER.md §5](CRAWL_FRONTIER.md#5-message-per-page-vs-message-per-job) goes through the two designs point by point: parallelism, completion, the cap, retries, duplicates, the ack timeout, order, fairness and build cost.
 
 **MassTransit 8 on RabbitMQ (D-1).** It provides retry, error queues, `Fault<T>` events and an EF outbox, so none of that needed hand-rolling on RabbitMQ.Client. It is pinned below 9 because MassTransit 9 has a commercial license.
 
