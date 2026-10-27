@@ -36,7 +36,8 @@ Commands were run against the debug stack on 2026-10-26 unless marked *untested*
 
 **What the debug stack changes** (`docker-compose.debug.yml` → `Dockerfile.debug`):
 - A Debug build: no optimization, PDBs next to the DLLs, so locals and stepping work.
-- `procps` (`ps`, `top`), plus `curl` and `unzip` so VS Code can install `vsdbg` at `/vsdbg/vsdbg` when it attaches (§4.1, D-31).
+- `vsdbg` at `/vsdbg/vsdbg`, installed with Microsoft's `getvsdbg.sh -v latest` (D-33).
+- `procps` (`ps`, `top`).
 - `dotnet-counters`, `dotnet-trace` and `dotnet-dump` in `/tools`, on `PATH`.
 - `cap_add: SYS_PTRACE`.
 - Its own image tags, `crawler-api:debug` and `crawler-worker:debug`, so it never overwrites the normal images. Switching back to mode A with `docker compose up --build` rebuilds the normal images.
@@ -50,7 +51,7 @@ Commands were run against the debug stack on 2026-10-26 unless marked *untested*
 
 Ports, credentials and the database volume are the same in every mode. Switching modes keeps your data. To start clean, run `docker compose down -v`.
 
-The debug image's first build downloads the three tools from `aka.ms`, so it needs internet access. Later builds use the cache. The first VS Code attach to each new container downloads vsdbg (about 60 MB).
+The debug image's first build downloads vsdbg and the three tools from `aka.ms`, so it needs internet access. Later builds use the cache; to pick up a newer vsdbg, rebuild with `--no-cache`.
 
 ## 2. Shared toolbox
 
@@ -232,7 +233,7 @@ npm run preview    # serve dist on http://localhost:4173
 ## 4. API
 
 ### 4.1 Attach in Docker: VS Code
-Prerequisites: the **C# extension** (or C# Dev Kit), since vsdbg only works with Microsoft's IDE clients; and **Node.js** on the host (already needed for `web/`), which runs the vsdbg sync.
+Prerequisite: the **C# extension** (or C# Dev Kit), since vsdbg only works with Microsoft's IDE clients.
 
 1. Start the debug stack: `docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build -d`. The VS Code task `debug-stack: up` runs the same command.
 2. In Run and Debug, start **Docker: attach API**.
@@ -240,20 +241,20 @@ Prerequisites: the **C# extension** (or C# Dev Kit), since vsdbg only works with
 4. Set breakpoints in `src/Crawler.Api/...` and send a request.
 
 How the configuration works (`.vscode/launch.json`):
-- **vsdbg is matched to your C# extension at attach time (D-31).** The `preLaunchTask` (`vsdbg: sync api`) runs [`.vscode/sync-vsdbg.mjs`](../.vscode/sync-vsdbg.mjs). The script reads the newest installed C# extension's `package.json`, takes its Linux debugger download (URL and SHA-256) for the container's architecture, and installs it at `/vsdbg` with `docker compose exec -u 0`. It skips the download when the container already has that build. To run it by hand: `node .vscode/sync-vsdbg.mjs api`.
+- **`"requireExactSource": false` is a temporary workaround (D-33).** C# extension 2.160.4 sends SHA384/SHA512 checksums in `setBreakpoints`, which vsdbg rejects, so breakpoints never bind ([dotnet/vscode-csharp#9802](https://github.com/dotnet/vscode-csharp/issues/9802), [#9848](https://github.com/dotnet/vscode-csharp/issues/9848)). Turning off exact-source matching is the maintainers' workaround. Remove it once a stable C# extension has the fix. Until then a breakpoint can bind even when the image was built from older source, so rebuild the debug image after changing code.
 - **The service restarts when you stop debugging (D-32).** Stopping leaves the app suspended: vsdbg suspends the runtime to detach, but VS Code ends `docker compose exec` before it finishes, and nothing resumes the app. So each attach configuration has a `postDebugTask` (`debug-stack: restart api`) that restarts the service, which takes a few seconds. In-memory state is lost; a crawl that was running resumes from the queue on redelivery (D-13).
-- **The sync task also restarts a service an earlier session left suspended.** That covers a session that ended without the `postDebugTask`, for example when VS Code was closed. It restarts the service if a vsdbg is still running in the container, or if the app doesn't answer `/health` within 3 seconds, then waits for it to answer before attaching.
+- A session that ends without the `postDebugTask` (for example when VS Code is closed) leaves the app suspended; restart the service by hand (see below).
 - VS Code runs `docker compose exec -T api /vsdbg/vsdbg …` and talks to the debugger over that pipe.
 - It attaches to PID 1. The image's entrypoint `exec`s `dotnet`, so the app is always PID 1.
 - `sourceFileMap` maps `/src` to the workspace, because the image builds from `/src` and the PDBs point at `/src/src/Crawler.Api/...`.
 
-Tested on 2026-10-26 with C# extension 2.160.4 and vsdbg 18.12.10903.2: attaching to the worker hit breakpoints in `JobCrawler.RunAsync`. The API uses the same configuration but hasn't been re-tested since the sync was added. Retested with the worker on 2026-10-27, after the restarts were added: stopping at a breakpoint restarted the worker, and attaching again worked.
+Tested on 2026-10-26 with C# extension 2.160.4 and vsdbg 18.12.10903.2: attaching to the worker hit breakpoints in `JobCrawler.RunAsync`. The API uses the same configuration but hasn't been re-tested since then. The D-33 setup (vsdbg 18.10 from `getvsdbg`, `requireExactSource: false`) hasn't been tested yet. Retested with the worker on 2026-10-27, after the restarts were added: stopping at a breakpoint restarted the worker, and attaching again worked.
 
-**Breakpoints show solid red but never hit.** If the Debug Console shows "Symbols loaded" and the code runs (its log lines appear) but nothing stops, have vsdbg log its protocol traffic. Add `"logging": { "moduleLoad": false, "diagnosticsLog": { "protocolMessages": true } }` to the attach configuration, attach again, and search the Debug Console for `setBreakpoints`. A response of `"success":false` with "Incorrect breakpoint request format" means vsdbg is older than the C# extension. Run the sync task, or `node .vscode/sync-vsdbg.mjs <service>`. VS Code doesn't flag a rejected `setBreakpoints`; the dots stay solid red.
+**Breakpoints show solid red but never hit.** If the Debug Console shows "Symbols loaded" and the code runs (its log lines appear) but nothing stops, have vsdbg log its protocol traffic. Add `"logging": { "moduleLoad": false, "diagnosticsLog": { "protocolMessages": true } }` to the attach configuration, attach again, and search the Debug Console for `setBreakpoints`. A response of `"success":false` with "Incorrect breakpoint request format" is the C# extension 2.160.4 checksum bug (#9802). Check that the attach configuration still has `"requireExactSource": false`, or set **Debug: Require Exact Source** off in settings. VS Code doesn't flag a rejected `setBreakpoints`; the dots stay solid red.
 
 **The API or worker stops responding after a debug session.** `/health` hangs and the service logs nothing, even though its container is up. An earlier debug session left the app suspended (see above). Restart it: `docker compose -f docker-compose.yml -f docker-compose.debug.yml restart api` (or `worker`). Killing vsdbg isn't enough, because the app stays suspended.
 
-**Attach fails with 0x80131c08.** That code is `CORDBG_E_TIMEOUT`: vsdbg started but timed out connecting to the runtime. The cause found on 2026-10-27 was a vsdbg from an earlier session, still attached to PID 1; the runtime accepts one debugger at a time. The sync task restarts the service in that case (D-32). If you attach some other way, check with `docker compose exec -T worker sh -c 'ps -eo pid,etime,args | grep "[/]vsdbg/vsdbg"'`, and restart the service if it lists one. vsdbg renames its process to "Command Thread", so look for it by command line.
+**Attach fails with 0x80131c08.** That code is `CORDBG_E_TIMEOUT`: vsdbg started but timed out connecting to the runtime. The cause found on 2026-10-27 was a vsdbg from an earlier session, still attached to PID 1; the runtime accepts one debugger at a time. Check with `docker compose exec -T worker sh -c 'ps -eo pid,etime,args | grep "[/]vsdbg/vsdbg"'`, and restart the service if it lists one. vsdbg renames its process to "Command Thread", so look for it by command line.
 
 ### 4.2 Attach in Docker: Visual Studio
 1. Start the debug stack as above.
@@ -421,7 +422,7 @@ TESTCONTAINERS_RYUK_DISABLED=true dotnet test         # all, incl. Testcontainer
 - **Dotted environment variable names are dropped by the normal images.** `Dockerfile` starts the app with `sh -c`, and Debian's `sh` (dash) removes variables whose names aren't valid shell identifiers. So an override like `Logging__LogLevel__Microsoft.AspNetCore=Debug` on the mode A `api` or `worker` service silently has no effect. Names without dots (`Logging__LogLevel__Polly`) work. `Dockerfile.debug` starts with `bash -c`, which keeps them (D-30).
   - Check what the process really got: `docker compose exec worker sh -c 'tr "\0" "\n" < /proc/1/environ'`.
   - `docker compose exec … printenv` does *not* show this, because `exec` bypasses the entrypoint.
-- **vsdbg must match the C# extension.** An older vsdbg in the container rejects the extension's breakpoint requests, so breakpoints stay solid red but never hit. The Docker attach configurations sync vsdbg before each attach (§4.1, D-31). If you attach some other way, run `node .vscode/sync-vsdbg.mjs <service>` first.
+- **C# extension 2.160.4 breakpoints never bind in containers.** vsdbg rejects the extension's breakpoint requests, so breakpoints stay solid red but never hit. The Docker attach configurations set `"requireExactSource": false` to work around it (§4.1, D-33). If you attach some other way, do the same.
 - **Stopping a Docker debug session suspends the app.** vsdbg never finishes detaching, so the app stays suspended until the service restarts. The VS Code attach configurations restart it for you (§4.1, D-32).
 - **Ports in use.** 5129, 5250, 5432, 5672, 15672 and 5173 must be free. A local PostgreSQL on 5432 is the usual culprit.
 - **Resetting.** `docker compose down -v` deletes the database volume (all jobs). The broker keeps no volume, so its queues, and any shovel plugins you enabled, reset whenever its container is recreated.

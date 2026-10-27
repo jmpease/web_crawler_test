@@ -7,8 +7,9 @@
       "name": "Docker: attach API",
       "type": "coreclr",
       "request": "attach",
-      // Installs the vsdbg build this C# extension expects; an older one silently rejects breakpoints (D-31).
-      "preLaunchTask": "vsdbg: sync api",
+      // Workaround for C# extension 2.160.4, which sends checksums vsdbg rejects, so breakpoints never bind
+      // (https://github.com/dotnet/vscode-csharp/issues/9802). Remove once a stable release has the fix (D-33).
+      "requireExactSource": false,
       // Stopping leaves the app suspended (vsdbg never finishes detaching), so restart it afterwards (D-32).
       "postDebugTask": "debug-stack: restart api",
       // The image's entrypoint execs dotnet, so the app is always PID 1.
@@ -28,7 +29,8 @@
       "name": "Docker: attach worker",
       "type": "coreclr",
       "request": "attach",
-      "preLaunchTask": "vsdbg: sync worker",
+      // See "Docker: attach API" (D-33).
+      "requireExactSource": false,
       "postDebugTask": "debug-stack: restart worker",
       "processId": "1",
       "pipeTransport": {

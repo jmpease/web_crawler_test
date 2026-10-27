@@ -30,25 +30,6 @@
       "problemMatcher": []
     },
     {
-      // Installs the vsdbg build the C# extension expects into the running container (D-31); a no-op when it's current.
-      "label": "vsdbg: sync api",
-      "type": "process",
-      "command": "node",
-      "args": ["${workspaceFolder}/.vscode/sync-vsdbg.mjs", "api"],
-      "options": { "cwd": "${workspaceFolder}" },
-      "presentation": { "reveal": "silent" },
-      "problemMatcher": []
-    },
-    {
-      "label": "vsdbg: sync worker",
-      "type": "process",
-      "command": "node",
-      "args": ["${workspaceFolder}/.vscode/sync-vsdbg.mjs", "worker"],
-      "options": { "cwd": "${workspaceFolder}" },
-      "presentation": { "reveal": "silent" },
-      "problemMatcher": []
-    },
-    {
       // Stopping a Docker debug session leaves the app suspended, so each attach configuration restarts its service
       // afterwards (D-32).
       "label": "debug-stack: restart api",
