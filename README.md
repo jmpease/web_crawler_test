@@ -108,7 +108,7 @@ npm run dev
 ```
 Open `http://localhost:5173`. The UI calls the API at `http://localhost:5129`; set `VITE_API_URL` to point it elsewhere (and add that origin to `Cors__AllowedOrigins`).
 
-To debug the API and worker in their containers (post-assessment), use the debug override: `docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build -d`. It adds Debug builds, vsdbg, diagnostic tools and more logging; see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
+To debug the API and worker in their containers (post-assessment), use the debug override: `docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build -d`. It adds Debug builds, diagnostic tools and more logging, and VS Code installs the matching vsdbg when it attaches; see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
 
 PostgreSQL listens on `localhost:5432`, RabbitMQ on `localhost:5672` (management UI on `http://localhost:15672`). The API listens on `http://localhost:5129`, the worker's `/health` on `http://localhost:5250`. Start the API first: it applies migrations.
 

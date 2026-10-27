@@ -1,5 +1,6 @@
 # Debug-only image for attaching a debugger to the API or worker in Docker (D-30). Used by docker-compose.debug.yml;
-# the normal Dockerfile is unchanged. Debug build (no optimization, PDBs kept), plus vsdbg and the dotnet diagnostic tools.
+# the normal Dockerfile is unchanged. Debug build (no optimization, PDBs kept), plus the dotnet diagnostic tools; vsdbg is
+# installed at attach time by VS Code's "vsdbg: sync" task (D-31).
 ARG PROJECT=Crawler.Api
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
@@ -22,12 +23,11 @@ ARG TARGETARCH
 ENV APP_DLL=${PROJECT}.dll
 ENV PATH="${PATH}:/tools"
 
-# procps gives ps/top for the debugger's process picker; curl and unzip are needed by the vsdbg installer.
+# procps gives ps/top for the debugger's process picker. curl and unzip let VS Code's "vsdbg: sync" task install, at
+# attach time, the vsdbg build its C# extension expects (D-31); a vsdbg baked in here would drift out of step with it.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends procps curl unzip \
     && rm -rf /var/lib/apt/lists/*
-
-RUN curl -sSL https://aka.ms/getvsdbgsh | bash /dev/stdin -v latest -l /vsdbg
 
 # Single-file builds of the diagnostic tools; they attach to PID 1 from `docker compose exec`.
 RUN arch=$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64) \

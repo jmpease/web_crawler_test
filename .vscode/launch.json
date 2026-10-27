@@ -7,6 +7,8 @@
       "name": "Docker: attach API",
       "type": "coreclr",
       "request": "attach",
+      // Installs the vsdbg build this C# extension expects; an older one silently rejects breakpoints (D-31).
+      "preLaunchTask": "vsdbg: sync api",
       // The image's entrypoint execs dotnet, so the app is always PID 1.
       "processId": "1",
       "pipeTransport": {
@@ -24,6 +26,7 @@
       "name": "Docker: attach worker",
       "type": "coreclr",
       "request": "attach",
+      "preLaunchTask": "vsdbg: sync worker",
       "processId": "1",
       "pipeTransport": {
         "pipeProgram": "docker",
@@ -87,11 +90,8 @@
       "console": "integratedTerminal"
     }
   ],
+  // No "attach API + worker" compound: two simultaneous attaches timed out (0x80131c08); see DEVELOPER_GUIDE §4.1.
   "compounds": [
-    {
-      "name": "Docker: attach API + worker",
-      "configurations": ["Docker: attach API", "Docker: attach worker"]
-    },
     {
       "name": "Local: launch API + worker",
       "configurations": ["Local: launch API", "Local: launch worker"]
