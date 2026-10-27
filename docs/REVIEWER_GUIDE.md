@@ -1,6 +1,6 @@
 # Reviewer guide
 
-> Written on 2026-10-26, after the assessment window closed. It changes no code: the code, tests, README and DECISIONS.md are as submitted on 2026-10-23, apart from this file and one pointer to it in the README.
+> Written on 2026-10-26, after the assessment window closed. It changes no code: the code and tests are as submitted on 2026-10-23, and so is DECISIONS.md through D-29. The README's "Post-assessment documentation" section lists everything added since.
 
 This guide is for someone reviewing the submission. It explains what the project does, how it is built, why it is built that way, what is missing, and what I would improve in the code that exists. It gathers in one place what is spread across three other files:
 
@@ -86,7 +86,7 @@ The API and the worker are separate processes and containers. Both are built fro
    - counters bumped.
 5. When no pending pages remain, `FinishAsync` reads the root page's status and marks the job `Completed` or `Failed`.
 
-**The frontier is the database.** The set of pages still to crawl is the job's `Pending` rows, not messages in the broker. That single choice (D-13) makes redelivery resume where the last attempt stopped, and it is what keeps idempotency simple.
+**The frontier is the database.** The set of pages still to crawl is the job's `Pending` rows, not messages in the broker. That single choice (D-13) makes redelivery resume where the last attempt stopped, and it is what keeps idempotency simple. [CRAWL_FRONTIER.md](CRAWL_FRONTIER.md) walks through it in detail.
 
 ### Data model
 - `jobs`: settings, status, timestamps, failure reason, `pages_enqueued` / `pages_processed`. Index `(created_at DESC, id)` serves history paging.

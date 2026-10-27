@@ -1,0 +1,100 @@
+{
+  // Debug configurations; see docs/DEVELOPER_GUIDE.md.
+  // "Docker: ..." attach to the debug stack: docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build -d
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Docker: attach API",
+      "type": "coreclr",
+      "request": "attach",
+      // The image's entrypoint execs dotnet, so the app is always PID 1.
+      "processId": "1",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["compose", "exec", "-T", "api"],
+        "pipeCwd": "${workspaceFolder}",
+        "debuggerPath": "/vsdbg/vsdbg",
+        "quoteArgs": false
+      },
+      // Dockerfile.debug builds from /src, so PDB paths look like /src/src/Crawler.Api/...
+      "sourceFileMap": { "/src": "${workspaceFolder}" },
+      "justMyCode": true
+    },
+    {
+      "name": "Docker: attach worker",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": "1",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["compose", "exec", "-T", "worker"],
+        "pipeCwd": "${workspaceFolder}",
+        "debuggerPath": "/vsdbg/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": { "/src": "${workspaceFolder}" },
+      "justMyCode": true
+    },
+    {
+      "name": "Local: launch API",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-api",
+      "program": "${workspaceFolder}/src/Crawler.Api/bin/Debug/net8.0/Crawler.Api.dll",
+      "cwd": "${workspaceFolder}/src/Crawler.Api",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5129"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Local: launch worker",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-worker",
+      "program": "${workspaceFolder}/src/Crawler.Worker/bin/Debug/net8.0/Crawler.Worker.dll",
+      "cwd": "${workspaceFolder}/src/Crawler.Worker",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5250"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "UI: Edge",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/web"
+    },
+    {
+      "name": "UI: Chrome",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/web"
+    },
+    {
+      "name": "UI: debug Vitest",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/web/node_modules/vitest/vitest.mjs",
+      "args": ["run", "--no-file-parallelism"],
+      "cwd": "${workspaceFolder}/web",
+      "autoAttachChildProcesses": true,
+      "skipFiles": ["<node_internals>/**"],
+      "console": "integratedTerminal"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Docker: attach API + worker",
+      "configurations": ["Docker: attach API", "Docker: attach worker"]
+    },
+    {
+      "name": "Local: launch API + worker",
+      "configurations": ["Local: launch API", "Local: launch worker"]
+    }
+  ]
+}

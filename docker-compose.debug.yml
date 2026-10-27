@@ -1,0 +1,25 @@
+# Debug override (D-30). Use with the main file:
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build
+# Builds the API and worker from Dockerfile.debug (Debug build, vsdbg, dotnet-counters/trace/dump) under their own
+# image tags, and turns up logging. See docs/DEVELOPER_GUIDE.md.
+services:
+  api:
+    image: crawler-api:debug
+    build:
+      dockerfile: Dockerfile.debug
+    cap_add:
+      - SYS_PTRACE
+    environment:
+      Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command: Information
+      Logging__LogLevel__MassTransit: Debug
+
+  worker:
+    image: crawler-worker:debug
+    build:
+      dockerfile: Dockerfile.debug
+    cap_add:
+      - SYS_PTRACE
+    environment:
+      Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command: Information
+      Logging__LogLevel__MassTransit: Debug
+      Logging__LogLevel__Polly: Information

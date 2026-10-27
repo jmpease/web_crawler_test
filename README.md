@@ -10,8 +10,10 @@ Quick start: `docker compose up --build`, then `cd web && npm ci && npm run dev`
 This was built in one sitting on 2026-10-23 inside the assessment's 4-hour timebox (12:30–4:20 pm ET, including these docs), using Claude Code as a pair programmer. `PLAN.md` holds the plan and slice order; `DECISIONS.md` logs every design decision with the options considered and the trade-off.
 
 ### Post-assessment documentation
-Added after the assessment window closed (2026-10-23, 12:30–4:20 pm ET). These files change no code; the code, tests and the rest of this README and DECISIONS.md are as submitted.
+Added after the assessment window closed (2026-10-23, 12:30–4:20 pm ET). These additions don't change the application code or tests; they add documentation and debug-only tooling (`Dockerfile.debug`, `docker-compose.debug.yml`, `.vscode/`). The rest of this README is as submitted, apart from one pointer under Run, and DECISIONS.md is as submitted through D-29.
 - [docs/REVIEWER_GUIDE.md](docs/REVIEWER_GUIDE.md) (2026-10-26): what the project does, its architecture, the reasoning behind each decision, what's missing, and what I'd improve in the current code.
+- [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) (2026-10-26): debugging the UI, the API and the worker, including attaching VS Code or Visual Studio to the containers, logs, the broker, the database and in-container diagnostics (D-30).
+- [docs/CRAWL_FRONTIER.md](docs/CRAWL_FRONTIER.md) (2026-10-26): what "the frontier is in the database" means, how the `Pending` pages act as the crawl queue, why redelivery resumes, and the costs of that design (D-13).
 
 ## Architecture
 ```
@@ -105,6 +107,8 @@ npm ci
 npm run dev
 ```
 Open `http://localhost:5173`. The UI calls the API at `http://localhost:5129`; set `VITE_API_URL` to point it elsewhere (and add that origin to `Cors__AllowedOrigins`).
+
+To debug the API and worker in their containers (post-assessment), use the debug override: `docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build -d`. It adds Debug builds, vsdbg, diagnostic tools and more logging; see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
 
 PostgreSQL listens on `localhost:5432`, RabbitMQ on `localhost:5672` (management UI on `http://localhost:15672`). The API listens on `http://localhost:5129`, the worker's `/health` on `http://localhost:5250`. Start the API first: it applies migrations.
 

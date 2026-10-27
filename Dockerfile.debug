@@ -1,0 +1,45 @@
+# Debug-only image for attaching a debugger to the API or worker in Docker (D-30). Used by docker-compose.debug.yml;
+# the normal Dockerfile is unchanged. Debug build (no optimization, PDBs kept), plus vsdbg and the dotnet diagnostic tools.
+ARG PROJECT=Crawler.Api
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ARG PROJECT
+WORKDIR /src
+
+# Same layout as the Dockerfile: sources end up under /src/src/..., which launch.json maps back to the repo.
+COPY global.json Directory.Build.props .editorconfig ./
+COPY src/Crawler.Domain/Crawler.Domain.csproj src/Crawler.Domain/
+COPY src/Crawler.Infrastructure/Crawler.Infrastructure.csproj src/Crawler.Infrastructure/
+COPY src/${PROJECT}/${PROJECT}.csproj src/${PROJECT}/
+RUN dotnet restore src/${PROJECT}/${PROJECT}.csproj
+
+COPY src/ src/
+RUN dotnet publish src/${PROJECT}/${PROJECT}.csproj -c Debug -o /app --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+ARG PROJECT
+ARG TARGETARCH
+ENV APP_DLL=${PROJECT}.dll
+ENV PATH="${PATH}:/tools"
+
+# procps gives ps/top for the debugger's process picker; curl and unzip are needed by the vsdbg installer.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends procps curl unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSL https://aka.ms/getvsdbgsh | bash /dev/stdin -v latest -l /vsdbg
+
+# Single-file builds of the diagnostic tools; they attach to PID 1 from `docker compose exec`.
+RUN arch=$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64) \
+    && mkdir /tools \
+    && for tool in dotnet-counters dotnet-trace dotnet-dump; do \
+         curl -sSL -o /tools/$tool https://aka.ms/$tool/linux-$arch && chmod +x /tools/$tool; \
+       done
+
+WORKDIR /app
+COPY --from=build /app .
+EXPOSE 8080
+USER $APP_UID
+# bash, not sh: dash drops environment variables whose names contain dots, such as
+# Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command, before dotnet starts.
+ENTRYPOINT ["bash", "-c", "exec dotnet \"$APP_DLL\""]
