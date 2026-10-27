@@ -47,6 +47,26 @@
       "options": { "cwd": "${workspaceFolder}" },
       "presentation": { "reveal": "silent" },
       "problemMatcher": []
+    },
+    {
+      // Stopping a Docker debug session leaves the app suspended, so each attach configuration restarts its service
+      // afterwards (D-32).
+      "label": "debug-stack: restart api",
+      "type": "process",
+      "command": "docker",
+      "args": ["compose", "-f", "docker-compose.yml", "-f", "docker-compose.debug.yml", "restart", "api"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "debug-stack: restart worker",
+      "type": "process",
+      "command": "docker",
+      "args": ["compose", "-f", "docker-compose.yml", "-f", "docker-compose.debug.yml", "restart", "worker"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
     }
   ]
 }

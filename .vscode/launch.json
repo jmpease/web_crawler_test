@@ -9,6 +9,8 @@
       "request": "attach",
       // Installs the vsdbg build this C# extension expects; an older one silently rejects breakpoints (D-31).
       "preLaunchTask": "vsdbg: sync api",
+      // Stopping leaves the app suspended (vsdbg never finishes detaching), so restart it afterwards (D-32).
+      "postDebugTask": "debug-stack: restart api",
       // The image's entrypoint execs dotnet, so the app is always PID 1.
       "processId": "1",
       "pipeTransport": {
@@ -27,6 +29,7 @@
       "type": "coreclr",
       "request": "attach",
       "preLaunchTask": "vsdbg: sync worker",
+      "postDebugTask": "debug-stack: restart worker",
       "processId": "1",
       "pipeTransport": {
         "pipeProgram": "docker",
@@ -90,7 +93,8 @@
       "console": "integratedTerminal"
     }
   ],
-  // No "attach API + worker" compound: two simultaneous attaches timed out (0x80131c08); see DEVELOPER_GUIDE §4.1.
+  // No "attach API + worker" compound (D-31). It was removed for a 0x80131c08 timeout that was probably a vsdbg left
+  // from an earlier session (D-32); it hasn't been re-tested.
   "compounds": [
     {
       "name": "Local: launch API + worker",

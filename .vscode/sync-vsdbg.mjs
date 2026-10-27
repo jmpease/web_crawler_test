@@ -1,6 +1,7 @@
 // Installs, in a running debug-stack container, the vsdbg build that the local VS Code C# extension expects (D-31).
 // An older vsdbg (getvsdbg.sh's "latest" lags the extension) rejects the extension's breakpoint requests, so
-// breakpoints silently never bind. Run by the "vsdbg: sync <service>" tasks before each Docker attach.
+// breakpoints silently never bind. Run by the "vsdbg: sync <service>" tasks before each Docker attach. It first
+// restarts the service if an earlier debug session left it suspended (D-32).
 //
 // Usage: node .vscode/sync-vsdbg.mjs <compose service>
 import { spawnSync } from "node:child_process";
@@ -11,6 +12,7 @@ import { join } from "node:path";
 const service = process.argv[2];
 if (!service) fail("Usage: node .vscode/sync-vsdbg.mjs <compose service>");
 
+restartIfLeftSuspended(service);
 const extension = findCSharpExtension();
 const arch = containerArch(service);
 const debuggerPackage = findLinuxDebugger(extension, arch);
@@ -61,6 +63,28 @@ function findLinuxDebugger(extension, arch) {
   return { url: entry.url, sha256: entry.integrity.toLowerCase() };
 }
 
+/**
+ * Stopping a Docker debug session can leave the app suspended: vsdbg suspends the runtime to detach, VS Code ends
+ * `docker compose exec` before it finishes, and nothing resumes the app (D-32). A vsdbg still running from that
+ * session also blocks the next attach (0x80131c08). Killing vsdbg doesn't resume the app, so restart the service.
+ * vsdbg renames its process, so pgrep matches the command line; the ^ keeps it from matching this sh -c script.
+ * Any HTTP answer counts as alive (a 503 just means the database or broker is down); only a timeout means suspended.
+ */
+function restartIfLeftSuspended(service) {
+  const check = `
+    if pgrep -f '^/vsdbg/vsdbg ' >/dev/null; then echo "a vsdbg from an earlier debug session is still running"; exit 0; fi
+    code=0; curl -s -o /dev/null -m 3 http://localhost:8080/health || code=$?
+    if [ "$code" = 28 ]; then echo "the app doesn't answer /health, so an earlier debug session left it suspended"; else echo ok; fi`;
+  const state = docker(["compose", "exec", "-T", service, "sh", "-c", check]).trim();
+  if (state === "ok") return;
+
+  console.log(`${service}: ${state}. Restarting ${service}.`);
+  docker(["compose", "restart", service]);
+  const wait = "for i in $(seq 60); do curl -s -o /dev/null -m 2 http://localhost:8080/health && exit 0; sleep 1; done; exit 1";
+  docker(["compose", "exec", "-T", service, "sh", "-c", wait], `${service} didn't answer /health within 60 s of restarting.`);
+  console.log(`${service} restarted.`);
+}
+
 /** Root is needed to write /vsdbg; the download is skipped when the container already has this build. */
 function installInContainer(service, { url, sha256 }) {
   const script = `
@@ -81,11 +105,11 @@ function installInContainer(service, { url, sha256 }) {
   ]));
 }
 
-function docker(args) {
+function docker(args, failure = "Is the debug stack running?") {
   const result = spawnSync("docker", args, { encoding: "utf8" });
   if (result.error) fail(`Could not run docker: ${result.error.message}`);
   if (result.status !== 0) {
-    fail(`docker ${args.slice(0, 4).join(" ")} … failed (exit ${result.status}). Is the debug stack running?\n${result.stderr}`);
+    fail(`docker ${args.slice(0, 4).join(" ")} … failed (exit ${result.status}). ${failure}\n${result.stderr}`);
   }
   return result.stdout;
 }
