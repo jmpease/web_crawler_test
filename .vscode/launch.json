@@ -95,9 +95,13 @@
       "console": "integratedTerminal"
     }
   ],
-  // No "attach API + worker" compound (D-31). It was removed for a 0x80131c08 timeout that was probably a vsdbg left
-  // from an earlier session (D-32); it hasn't been re-tested.
   "compounds": [
+    {
+      "name": "Docker: attach API + worker",
+      "configurations": ["Docker: attach API", "Docker: attach worker"],
+      // Stopping either session stops both, so both run their postDebugTask restart (D-32, D-34).
+      "stopAll": true
+    },
     {
       "name": "Local: launch API + worker",
       "configurations": ["Local: launch API", "Local: launch worker"]

@@ -243,6 +243,7 @@ Prerequisite: the **C# extension** (or C# Dev Kit), since vsdbg only works with 
 How the configuration works (`.vscode/launch.json`):
 - **`"requireExactSource": false` is a temporary workaround (D-33).** C# extension 2.160.4 sends SHA384/SHA512 checksums in `setBreakpoints`, which vsdbg rejects, so breakpoints never bind ([dotnet/vscode-csharp#9802](https://github.com/dotnet/vscode-csharp/issues/9802), [#9848](https://github.com/dotnet/vscode-csharp/issues/9848)). Turning off exact-source matching is the maintainers' workaround. Remove it once a stable C# extension has the fix. Until then a breakpoint can bind even when the image was built from older source, so rebuild the debug image after changing code.
 - **The service restarts when you stop debugging (D-32).** Stopping leaves the app suspended: vsdbg suspends the runtime to detach, but VS Code ends `docker compose exec` before it finishes, and nothing resumes the app. So each attach configuration has a `postDebugTask` (`debug-stack: restart api`) that restarts the service, which takes a few seconds. In-memory state is lost; a crawl that was running resumes from the queue on redelivery (D-13).
+- **Docker: attach API + worker** attaches to both services at once. Stopping either session stops both, and both services restart (D-34).
 - A session that ends without the `postDebugTask` (for example when VS Code is closed) leaves the app suspended; restart the service by hand (see below).
 - VS Code runs `docker compose exec -T api /vsdbg/vsdbg …` and talks to the debugger over that pipe.
 - It attaches to PID 1. The image's entrypoint `exec`s `dotnet`, so the app is always PID 1.
@@ -254,7 +255,7 @@ Tested on 2026-10-26 with C# extension 2.160.4 and vsdbg 18.12.10903.2: attachin
 
 **The API or worker stops responding after a debug session.** `/health` hangs and the service logs nothing, even though its container is up. An earlier debug session left the app suspended (see above). Restart it: `docker compose -f docker-compose.yml -f docker-compose.debug.yml restart api` (or `worker`). Killing vsdbg isn't enough, because the app stays suspended.
 
-**Attach fails with 0x80131c08.** That code is `CORDBG_E_TIMEOUT`: vsdbg started but timed out connecting to the runtime. The cause found on 2026-10-27 was a vsdbg from an earlier session, still attached to PID 1; the runtime accepts one debugger at a time. Check with `docker compose exec -T worker sh -c 'ps -eo pid,etime,args | grep "[/]vsdbg/vsdbg"'`, and restart the service if it lists one. vsdbg renames its process to "Command Thread", so look for it by command line.
+**Attach fails with 0x80131c08.** That code is `CORDBG_E_TIMEOUT`: vsdbg started but timed out connecting to the runtime. The cause found on 2026-10-27 was a vsdbg from an earlier session, still attached to PID 1; the runtime accepts one debugger at a time. Nothing restarts the service before an attach any more (D-33), so check with `docker compose exec -T worker sh -c 'ps -eo pid,etime,args | grep "[/]vsdbg/vsdbg"'`, and restart the service if it lists one. vsdbg renames its process to "Command Thread", so look for it by command line.
 
 ### 4.2 Attach in Docker: Visual Studio
 1. Start the debug stack as above.
