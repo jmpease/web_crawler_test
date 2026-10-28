@@ -14,6 +14,7 @@ Added after the assessment window closed (2026-10-23, 12:30–4:20 pm ET). These
 - [docs/REVIEWER_GUIDE.md](docs/REVIEWER_GUIDE.md) (2026-10-26): what the project does, its architecture, the reasoning behind each decision, what's missing, and what I'd improve in the current code.
 - [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) (2026-10-26): debugging the UI, the API and the worker, including attaching VS Code or Visual Studio to the containers, logs, the broker, the database and in-container diagnostics (D-30).
 - [docs/CRAWL_FRONTIER.md](docs/CRAWL_FRONTIER.md) (2026-10-26): what "the frontier is in the database" means, how the `Pending` pages act as the crawl queue, why redelivery resumes, and the costs of that design (D-13). §5 (2026-10-27) compares one message per job with one message per page in detail.
+- [docs/RETROSPECTIVE.md](docs/RETROSPECTIVE.md) (2026-10-27): a critical review of the commit history on `main`: what went well, and what to do differently in planning, sequencing, testing and commits next time.
 
 ## Architecture
 ```
